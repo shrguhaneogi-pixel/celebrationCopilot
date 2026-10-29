@@ -39,8 +39,11 @@ describe('ChatSidebar Integration & Workflow', () => {
     const chip = screen.getByText('200 Guests');
     fireEvent.click(chip);
 
-    const textarea = screen.getByRole('textbox', { name: /Planning Copilot chat input/i }) as HTMLTextAreaElement;
-    expect(textarea.value).toBe('Increase guests to 200');
+    const textarea = screen.getByRole('textbox', { name: /Planning Copilot chat input/i });
+    expect(textarea).toBeInstanceOf(HTMLTextAreaElement);
+    if (textarea instanceof HTMLTextAreaElement) {
+      expect(textarea.value).toBe('Increase guests to 200');
+    }
   });
 
   it('handles Shift+Enter for newline without submitting form', () => {
@@ -81,10 +84,9 @@ describe('ChatSidebar Integration & Workflow', () => {
       plan: nextPlan,
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockApiResponse,
-    } as Response);
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockApiResponse))
+    );
 
     renderWithContext();
 
@@ -136,10 +138,9 @@ describe('ChatSidebar Integration & Workflow', () => {
       },
     };
 
-    global.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => mockApiResponse,
-    } as Response);
+    global.fetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(mockApiResponse))
+    );
 
     renderWithContext();
 
@@ -163,18 +164,16 @@ describe('ChatSidebar Integration & Workflow', () => {
     global.fetch = vi.fn().mockImplementation(async () => {
       callCount++;
       if (callCount === 1) {
-        return {
-          ok: false,
-          status: 500,
-          json: async () => ({
+        return new Response(
+          JSON.stringify({
             success: false,
             error: 'AI Provider timeout. Plan preserved.',
           }),
-        } as Response;
+          { status: 500, headers: { 'Content-Type': 'application/json' } }
+        );
       }
-      return {
-        ok: true,
-        json: async () => ({
+      return new Response(
+        JSON.stringify({
           success: true,
           proposal: {
             summary: 'Recovered proposal after retry',
@@ -188,7 +187,8 @@ describe('ChatSidebar Integration & Workflow', () => {
             updatedAt: '2026-10-29T10:05:00.000Z',
           },
         }),
-      } as Response;
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
     });
 
     renderWithContext();

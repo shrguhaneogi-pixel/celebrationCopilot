@@ -5,7 +5,13 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { VendorTask, VendorPriority, VendorStatus } from '@/domain/event-plan.schema';
+import {
+  VendorTask,
+  VendorPriority,
+  VendorStatus,
+  VendorPrioritySchema,
+  VendorStatusSchema,
+} from '@/domain/event-plan.schema';
 import { MockVendorItem } from '@/lib/mock-data';
 import { useEventPlan } from '@/context/EventPlanContext';
 import { Check, Copy, HelpCircle, Briefcase, Plus, Trash2, AlertCircle } from 'lucide-react';
@@ -212,7 +218,12 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                 <select
                   id="new-vendor-priority"
                   value={newPriority}
-                  onChange={(e) => setNewPriority(e.target.value as VendorPriority)}
+                  onChange={(e) => {
+                    const parsed = VendorPrioritySchema.safeParse(e.target.value);
+                    if (parsed.success) {
+                      setNewPriority(parsed.data);
+                    }
+                  }}
                   className="h-8 text-xs bg-background border border-border rounded-md px-2 w-full text-foreground"
                 >
                   <option value="high">High Priority</option>
@@ -280,7 +291,12 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                       <>
                         <select
                           value={vendor.priority}
-                          onChange={(e) => handlePriorityChange(vendor.id, e.target.value as VendorPriority)}
+                          onChange={(e) => {
+                            const parsed = VendorPrioritySchema.safeParse(e.target.value);
+                            if (parsed.success) {
+                              handlePriorityChange(vendor.id, parsed.data);
+                            }
+                          }}
                           className="text-[11px] h-6 px-1.5 rounded border border-border bg-background text-foreground cursor-pointer font-medium"
                           title="Change priority"
                           aria-label={`Change priority for ${vendor.name}`}
@@ -294,7 +310,12 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
 
                         <select
                           value={vendor.status}
-                          onChange={(e) => handleStatusChange(vendor.id, e.target.value as VendorStatus)}
+                          onChange={(e) => {
+                            const parsed = VendorStatusSchema.safeParse(e.target.value);
+                            if (parsed.success) {
+                              handleStatusChange(vendor.id, parsed.data);
+                            }
+                          }}
                           className="text-[11px] h-6 px-1.5 rounded border border-border bg-background text-foreground cursor-pointer font-semibold"
                           title="Change booking status"
                           aria-label={`Change booking status for ${vendor.name}`}

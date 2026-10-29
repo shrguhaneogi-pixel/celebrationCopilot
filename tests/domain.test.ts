@@ -12,6 +12,7 @@ import {
   computeDueDate,
   applyProposal,
   applyProposalOrThrow,
+  assertNever,
   DomainEngineError,
 } from '@/domain/planning-engine';
 
@@ -598,5 +599,25 @@ describe('Pure Planning Engine: applyProposal', () => {
       expect(result.derivedMetrics.actualTotal).toBe(80000);
       expect(result.derivedMetrics.committedTotal).toBe(0);
     }
+  });
+
+  it('assertNever helper throws DomainEngineError formatting unknown mutations safely', () => {
+    // When passed an object with a type property
+    expect(() => assertNever({ type: 'UNSUPPORTED_OP' } as never)).toThrowError(
+      /Unhandled mutation type: UNSUPPORTED_OP/
+    );
+
+    // When passed a primitive or object without type property
+    expect(() => assertNever('malformed_payload' as never)).toThrowError(
+      /Unhandled mutation type: malformed_payload/
+    );
+
+    expect(() => assertNever(null as never)).toThrowError(
+      /Unhandled mutation type: null/
+    );
+
+    expect(() => assertNever({ unhandledKey: 42 } as never)).toThrowError(
+      /Unhandled mutation type: \{"unhandledKey":42\}/
+    );
   });
 });

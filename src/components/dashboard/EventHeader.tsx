@@ -113,17 +113,23 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
       },
     ];
 
-    const res = dispatchMutations
-      ? dispatchMutations(mutations)
-      : dispatchMutation!({
-          type: 'SET_DETAILS',
-          eventDate: editDate.trim() ? editDate.trim() : null,
-          location: editLocation.trim(),
-        });
-
-    if (!res.success) {
-      setEditError(res.error || 'Failed to update event details.');
-      return;
+    if (dispatchMutations) {
+      const res = dispatchMutations(mutations);
+      if (!res.success) {
+        setEditError(res.error || 'Failed to update event details.');
+        return;
+      }
+    } else {
+      if (!dispatchMutation) return;
+      const res = dispatchMutation({
+        type: 'SET_DETAILS',
+        eventDate: editDate.trim() ? editDate.trim() : null,
+        location: editLocation.trim(),
+      });
+      if (!res.success) {
+        setEditError(res.error || 'Failed to update event details.');
+        return;
+      }
     }
 
     setIsEditing(false);

@@ -1,4 +1,10 @@
-import { EventPlan, EventPlanSchema, DerivedEventMetrics, isValidCalendarDate } from './event-plan.schema';
+import {
+  EventPlan,
+  EventPlanSchema,
+  DerivedEventMetrics,
+  isValidCalendarDate,
+  VendorTask,
+} from './event-plan.schema';
 import { Proposal, ProposalSchema, PlanMutation } from './proposal.schema';
 
 export class DomainEngineError extends Error {
@@ -274,12 +280,12 @@ export function applyMutation(plan: EventPlan, mutation: PlanMutation): EventPla
         throw new DomainEngineError(`Vendor task with ID "${mutation.id}" already exists in the plan`);
       }
       const newVendorId = mutation.id || `ven-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      const newVendor = {
+      const newVendor: VendorTask = {
         id: newVendorId,
         name: mutation.name,
         category: mutation.category,
         priority: mutation.priority ?? 'medium',
-        status: 'not_started' as const,
+        status: 'not_started',
         suggestedQuestions: mutation.suggestedQuestions ?? [],
       };
 
@@ -323,10 +329,37 @@ export function applyMutation(plan: EventPlan, mutation: PlanMutation): EventPla
     }
 
     default: {
-      const exhaustiveCheck: never = mutation;
-      throw new DomainEngineError(`Unhandled mutation type: ${(exhaustiveCheck as { type: string }).type}`);
+      return assertNever(mutation);
     }
   }
+}
+
+/**
+ * Exhaustive check helper that throws DomainEngineError if reached at runtime.
+ * Guarantees compile-time completeness of switch/case statements without type casting.
+ */
+export function assertNever(value: never): never {
+  const candidate: unknown = value;
+  let typeStr: string;
+
+  if (
+    typeof candidate === 'object' &&
+    candidate !== null &&
+    'type' in candidate &&
+    typeof candidate.type === 'string'
+  ) {
+    typeStr = candidate.type;
+  } else if (typeof candidate === 'string') {
+    typeStr = candidate;
+  } else {
+    try {
+      typeStr = JSON.stringify(candidate);
+    } catch {
+      typeStr = String(value);
+    }
+  }
+
+  throw new DomainEngineError(`Unhandled mutation type: ${typeStr}`);
 }
 
 /**
