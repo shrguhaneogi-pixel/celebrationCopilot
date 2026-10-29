@@ -481,4 +481,80 @@ describe('Pure Planning Engine: applyProposal', () => {
     // Fails at schema validation before engine touches it
     expect(() => ProposalSchema.parse(maliciousProposal)).toThrow();
   });
+
+  it('rejects ADD_BUDGET_ITEM with an ID that already exists in the plan', () => {
+    const initial = getInitialPlan();
+    const duplicateProposal: Proposal = {
+      summary: 'Add item with collision ID',
+      operations: [
+        {
+          type: 'ADD_BUDGET_ITEM',
+          id: 'item-101', // Already in initial plan
+          name: 'Conflict Item',
+          category: 'Decor',
+          estimatedCost: 15000,
+        },
+      ],
+    };
+
+    const result = applyProposal(initial, duplicateProposal);
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error).toContain('already exists in the plan');
+    }
+  });
+
+  it('detects budget overruns when actualCost exceeds estimatedCost', () => {
+    const initial = getInitialPlan();
+    // initial totalCap is 200000, item-101 estimated is 80000
+    // Commit item-101 at 250000 (over totalCap 200000)
+    const overrunProposal: Proposal = {
+      summary: 'Commit catering with major overrun',
+      operations: [
+        {
+          type: 'UPDATE_BUDGET_ITEM',
+          itemId: 'item-101',
+          actualCost: 250000,
+          status: 'committed',
+        },
+      ],
+    };
+
+    const result = applyProposal(initial, overrunProposal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.derivedMetrics.isOverBudget).toBe(true);
+      expect(result.derivedMetrics.remainingBudget).toBe(-50000); // 200000 - 250000
+      expect(result.derivedMetrics.allocationPercent).toBe(125);
+    }
+  });
+
+  it('correctly tracks $0 actual cost for sponsored/waived paid items', () => {
+    const initial = getInitialPlan();
+    const freeItemProposal: Proposal = {
+      summary: 'Add free sponsored item and mark paid',
+      operations: [
+        {
+          type: 'ADD_BUDGET_ITEM',
+          id: 'item-free',
+          name: 'Sponsored Cake',
+          category: 'Food',
+          estimatedCost: 20000,
+          actualCost: 0,
+          status: 'paid',
+        },
+      ],
+    };
+
+    const result = applyProposal(initial, freeItemProposal);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      const freeItem = result.plan.items.find((i) => i.id === 'item-free');
+      expect(freeItem?.actualCost).toBe(0);
+      expect(freeItem?.status).toBe('paid');
+      // actualTotal should include 80000 (projected catering) + 0 (paid cake) = 80000
+      expect(result.derivedMetrics.actualTotal).toBe(80000);
+      expect(result.derivedMetrics.committedTotal).toBe(0);
+    }
+  });
 });

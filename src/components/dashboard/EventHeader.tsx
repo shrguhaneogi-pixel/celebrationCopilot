@@ -4,9 +4,10 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { formatCurrency } from '@/lib/utils';
 import { MockEventPlan } from '@/lib/mock-data';
+import { EventPlan } from '@/domain/event-plan.schema';
 
 interface EventHeaderProps {
-  plan: MockEventPlan;
+  plan: (EventPlan | MockEventPlan) & { venue?: string };
 }
 
 export function EventHeader({ plan }: EventHeaderProps) {
@@ -15,6 +16,8 @@ export function EventHeader({ plan }: EventHeaderProps) {
   const remainingBudget = plan.totalCap - projectedTotal;
   const allocationPercent = Math.min(100, Math.round((projectedTotal / plan.totalCap) * 100));
   const isOverBudget = remainingBudget < 0;
+
+  const displayLocation = 'location' in plan ? (plan.location as string) : (plan.venue || 'Location TBD');
 
   return (
     <Card className="p-5 md:p-6 shadow-sm border-border bg-card">
@@ -33,15 +36,17 @@ export function EventHeader({ plan }: EventHeaderProps) {
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
             <span className="inline-flex items-center gap-1.5">
               <MapPin className="w-3.5 h-3.5 text-primary" />
-              {plan.venue}
+              {displayLocation}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5 text-primary" />
-              {new Date(plan.eventDate).toLocaleDateString('en-IN', {
-                day: 'numeric',
-                month: 'short',
-                year: 'numeric',
-              })}
+              {plan.eventDate
+                ? new Date(plan.eventDate).toLocaleDateString('en-IN', {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })
+                : 'Date TBD'}
             </span>
             <span className="inline-flex items-center gap-1.5">
               <Users className="w-3.5 h-3.5 text-primary" />

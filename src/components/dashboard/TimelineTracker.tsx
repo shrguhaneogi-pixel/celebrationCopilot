@@ -1,17 +1,18 @@
 import React from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Milestone } from '@/domain/event-plan.schema';
 import { MockMilestone } from '@/lib/mock-data';
 import { CheckCircle2, Clock, CalendarClock } from 'lucide-react';
 
 interface TimelineTrackerProps {
-  milestones: MockMilestone[];
-  eventDate: string;
+  milestones: (Milestone | MockMilestone)[];
+  eventDate: string | null;
 }
 
 export function TimelineTracker({ milestones, eventDate }: TimelineTrackerProps) {
   const completedCount = milestones.filter((m) => m.completed).length;
-  const progressPercent = Math.round((completedCount / milestones.length) * 100);
+  const progressPercent = milestones.length > 0 ? Math.round((completedCount / milestones.length) * 100) : 0;
 
   return (
     <Card className="shadow-sm border-border">
@@ -23,7 +24,7 @@ export function TimelineTracker({ milestones, eventDate }: TimelineTrackerProps)
               Adaptive Milestone Timeline
             </CardTitle>
             <CardDescription>
-              All target deadlines are automatically computed from the celebration date ({eventDate}).
+              All target deadlines are automatically computed from the celebration date ({eventDate || 'Date TBD'}).
             </CardDescription>
           </div>
           <Badge variant="outline" className="self-start sm:self-auto font-mono text-xs">
@@ -68,7 +69,7 @@ export function TimelineTracker({ milestones, eventDate }: TimelineTrackerProps)
                       {ms.title}
                     </p>
                     <div className="flex flex-wrap items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                      <span>Due: {ms.dueDate}</span>
+                      <span>Due: {ms.dueDate || 'Pending'}</span>
                       <span>•</span>
                       <span className="capitalize">{ms.category}</span>
                     </div>

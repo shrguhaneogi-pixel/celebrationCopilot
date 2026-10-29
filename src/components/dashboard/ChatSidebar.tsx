@@ -4,48 +4,136 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { MockChatMessage } from '@/lib/mock-data';
+import { EventPlan } from '@/domain/event-plan.schema';
 import { formatCurrency } from '@/lib/utils';
-import { Bot, Send, Sparkles, PlusCircle, Check, ArrowRight, ShieldAlert } from 'lucide-react';
+import { Bot, Send, Sparkles, PlusCircle, Check, ArrowRight, ShieldAlert, Loader2 } from 'lucide-react';
 
 interface ChatSidebarProps {
-  initialMessages: MockChatMessage[];
+  initialMessages?: MockChatMessage[];
   currency: string;
+  currentPlan: EventPlan;
+  onApplyPlan: (newPlan: EventPlan) => void;
 }
 
-export function ChatSidebar({ initialMessages, currency }: ChatSidebarProps) {
+export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApplyPlan }: ChatSidebarProps) {
   const [messages, setMessages] = useState<MockChatMessage[]>(initialMessages);
   const [inputVal, setInputVal] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [stagedPlan, setStagedPlan] = useState<EventPlan | null>(null);
   const [appliedProposal, setAppliedProposal] = useState(false);
   const [dismissedProposal, setDismissedProposal] = useState(false);
 
   const handleApply = () => {
-    setAppliedProposal(true);
+    if (stagedPlan) {
+      onApplyPlan(stagedPlan);
+      setAppliedProposal(true);
+    }
   };
 
   const handleDismiss = () => {
     setDismissedProposal(true);
+    setStagedPlan(null);
   };
 
-  const handleSend = (e: React.FormEvent) => {
+  const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputVal.trim()) return;
+    const promptText = inputVal.trim();
+    if (!promptText || isLoading) return;
 
     const userMsg: MockChatMessage = {
       id: `msg-${Date.now()}`,
       sender: 'user',
-      text: inputVal,
+      text: promptText,
       timestamp: 'Just now',
     };
 
-    const mockReply: MockChatMessage = {
-      id: `reply-${Date.now()}`,
-      sender: 'assistant',
-      text: `[Mock Simulator] Received: "${inputVal}". In Phase 3, this prompt generates a structured ProposalSchema proposal.`,
-      timestamp: 'Just now',
-    };
-
-    setMessages((prev) => [...prev, userMsg, mockReply]);
+    setMessages((prev) => [...prev, userMsg]);
     setInputVal('');
+    setIsLoading(true);
+
+    try {
+      const res = await fetch('/api/planner', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: promptText,
+          currentPlan,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (data.success && data.proposal) {
+        let costDelta = 0;
+        const mutationsList: string[] = [];
+
+        for (const op of data.proposal.operations) {
+          if (op.type === 'ADD_BUDGET_ITEM') {
+            costDelta += op.estimatedCost;
+            mutationsList.push(`ADD_BUDGET_ITEM: ${op.name} (+${formatCurrency(op.estimatedCost, currency)})`);
+          } else if (op.type === 'UPDATE_BUDGET_ITEM') {
+            mutationsList.push(`UPDATE_BUDGET_ITEM: ${op.name || op.itemId}`);
+          } else if (op.type === 'REMOVE_BUDGET_ITEM') {
+            mutationsList.push(`REMOVE_BUDGET_ITEM: Item ${op.itemId}`);
+          } else if (op.type === 'UPDATE_GUEST_COUNT') {
+            mutationsList.push(`UPDATE_GUEST_COUNT: ${op.guestCount} guests`);
+          } else if (op.type === 'UPDATE_TARGET_BUDGET') {
+            mutationsList.push(`UPDATE_TARGET_BUDGET: ${formatCurrency(op.totalCap, currency)}`);
+          } else if (op.type === 'ADD_MILESTONE') {
+            mutationsList.push(`ADD_MILESTONE: ${op.title} (${op.offsetDays}d)`);
+          } else if (op.type === 'UPDATE_MILESTONE') {
+            mutationsList.push(`UPDATE_MILESTONE: ${op.title || op.milestoneId}`);
+          } else if (op.type === 'REMOVE_MILESTONE') {
+            mutationsList.push(`REMOVE_MILESTONE: Milestone ${op.milestoneId}`);
+          } else if (op.type === 'ADD_VENDOR') {
+            mutationsList.push(`ADD_VENDOR: ${op.name} (${op.category})`);
+          } else if (op.type === 'UPDATE_VENDOR') {
+            mutationsList.push(`UPDATE_VENDOR: Vendor ${op.vendorId}`);
+          } else if (op.type === 'REMOVE_VENDOR') {
+            mutationsList.push(`REMOVE_VENDOR: Vendor ${op.vendorId}`);
+          } else if (op.type === 'SET_DETAILS') {
+            mutationsList.push(`SET_DETAILS: ${op.title || op.eventDate || 'Updated details'}`);
+          }
+        }
+
+        setStagedPlan(data.plan);
+        setAppliedProposal(false);
+        setDismissedProposal(false);
+
+        const replyMsg: MockChatMessage = {
+          id: `reply-${Date.now()}`,
+          sender: 'assistant',
+          text: data.proposal.summary,
+          timestamp: 'Just now',
+          proposalDiff: {
+            title: data.proposal.summary,
+            costDelta,
+            mutations: mutationsList,
+          },
+        };
+
+        setMessages((prev) => [...prev, replyMsg]);
+      } else {
+        const errorReply: MockChatMessage = {
+          id: `reply-${Date.now()}`,
+          sender: 'assistant',
+          text: `⚠️ ${data.error || 'Unable to apply proposal. Your plan was preserved.'}`,
+          timestamp: 'Just now',
+        };
+        setMessages((prev) => [...prev, errorReply]);
+      }
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : 'Network request failed';
+      const errorReply: MockChatMessage = {
+        id: `reply-${Date.now()}`,
+        sender: 'assistant',
+        text: `⚠️ Network error: ${errorMsg}. Your plan was preserved.`,
+        timestamp: 'Just now',
+      };
+      setMessages((prev) => [...prev, errorReply]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const handleChipClick = (prompt: string) => {
@@ -66,11 +154,11 @@ export function ChatSidebar({ initialMessages, currency }: ChatSidebarProps) {
                 Planning Copilot
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
               </CardTitle>
-              <p className="text-[11px] text-muted-foreground">Untrusted Proposal Model</p>
+              <p className="text-[11px] text-muted-foreground">Deterministic Proposal Model</p>
             </div>
           </div>
           <Badge variant="outline" className="text-[10px] font-mono">
-            Mock Simulator
+            Vercel AI SDK
           </Badge>
         </div>
       </CardHeader>
@@ -89,7 +177,7 @@ export function ChatSidebar({ initialMessages, currency }: ChatSidebarProps) {
                     : 'bg-muted/50 border border-border text-foreground rounded-tl-none'
                 }`}
               >
-                <p className="leading-relaxed">{msg.text}</p>
+                <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                 <span
                   className={`text-[10px] mt-1 block ${
                     isUser ? 'text-primary-foreground/75' : 'text-muted-foreground'
@@ -107,30 +195,35 @@ export function ChatSidebar({ initialMessages, currency }: ChatSidebarProps) {
                       <Sparkles className="w-3.5 h-3.5" />
                       {msg.proposalDiff.title}
                     </span>
-                    <Badge variant="default" className="text-[10px] font-mono">
-                      +{formatCurrency(msg.proposalDiff.costDelta, currency)}
-                    </Badge>
+                    {msg.proposalDiff.costDelta !== 0 && (
+                      <Badge variant="default" className="text-[10px] font-mono">
+                        {msg.proposalDiff.costDelta > 0 ? '+' : ''}
+                        {formatCurrency(msg.proposalDiff.costDelta, currency)}
+                      </Badge>
+                    )}
                   </div>
 
-                  <ul className="space-y-1 text-[11px] text-muted-foreground border-l-2 border-primary/40 pl-2">
-                    {msg.proposalDiff.mutations.map((m, idx) => (
-                      <li key={idx} className="flex items-start gap-1">
-                        <ArrowRight className="w-3 h-3 text-primary mt-0.5 shrink-0" />
-                        <span>{m}</span>
-                      </li>
-                    ))}
-                  </ul>
+                  {msg.proposalDiff.mutations.length > 0 && (
+                    <ul className="space-y-1 text-[11px] text-muted-foreground border-l-2 border-primary/40 pl-2">
+                      {msg.proposalDiff.mutations.map((m, idx) => (
+                        <li key={idx} className="flex items-start gap-1">
+                          <ArrowRight className="w-3 h-3 text-primary mt-0.5 shrink-0" />
+                          <span>{m}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
 
                   {appliedProposal ? (
                     <div className="p-2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold text-center flex items-center justify-center gap-1 text-[11px]">
                       <Check className="w-3.5 h-3.5" />
-                      Proposal Staged to Plan (Mock Mode)
+                      Proposal Applied Successfully!
                     </div>
                   ) : (
                     <div className="flex gap-2 pt-1 border-t border-border/60">
                       <Button
                         size="sm"
-                        className="flex-1 text-xs h-7"
+                        className="flex-1 text-xs h-7 cursor-pointer"
                         onClick={handleApply}
                       >
                         Apply to Plan
@@ -138,7 +231,7 @@ export function ChatSidebar({ initialMessages, currency }: ChatSidebarProps) {
                       <Button
                         size="sm"
                         variant="outline"
-                        className="text-xs h-7"
+                        className="text-xs h-7 cursor-pointer"
                         onClick={handleDismiss}
                       >
                         Dismiss
@@ -148,32 +241,47 @@ export function ChatSidebar({ initialMessages, currency }: ChatSidebarProps) {
 
                   <p className="text-[10px] text-muted-foreground flex items-center gap-1">
                     <ShieldAlert className="w-3 h-3 text-muted-foreground" />
-                    Proposals do not modify state until validated and applied.
+                    Untrusted proposal: state is untouched until you click Apply.
                   </p>
                 </div>
               )}
             </div>
           );
         })}
+
+        {isLoading && (
+          <div className="flex items-center gap-2 text-muted-foreground text-xs py-2">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <span>AI generating structured proposal...</span>
+          </div>
+        )}
       </CardContent>
 
       {/* Quick Suggestion Chips */}
       <div className="px-4 py-2 bg-muted/30 border-t border-border flex flex-wrap gap-1.5">
         <button
           type="button"
-          onClick={() => handleChipClick('Add live dhol players for the Baraat')}
+          onClick={() => handleChipClick('Increase guests to 200')}
           className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1"
         >
           <PlusCircle className="w-3 h-3 text-primary" />
-          Baraat Dhol
+          200 Guests
         </button>
         <button
           type="button"
-          onClick={() => handleChipClick('Add royal fireworks and cold pyros for Varmala')}
+          onClick={() => handleChipClick('Add live dhol players and DJ for ₹45,000')}
           className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1"
         >
           <PlusCircle className="w-3 h-3 text-primary" />
-          Varmala Pyros
+          Add DJ (₹45,000)
+        </button>
+        <button
+          type="button"
+          onClick={() => handleChipClick('Increase budget cap to ₹30,00,000')}
+          className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1"
+        >
+          <PlusCircle className="w-3 h-3 text-primary" />
+          Expand Budget
         </button>
       </div>
 
@@ -184,15 +292,16 @@ export function ChatSidebar({ initialMessages, currency }: ChatSidebarProps) {
             <Input
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              placeholder="Suggest an event change..."
+              placeholder="e.g. Increase guests to 200 or add a florist..."
+              disabled={isLoading}
               className="text-xs h-9 bg-background"
             />
-            <Button type="submit" size="sm" className="h-9 px-3">
-              <Send className="w-3.5 h-3.5" />
+            <Button type="submit" size="sm" disabled={isLoading || !inputVal.trim()} className="h-9 px-3 cursor-pointer">
+              {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
             </Button>
           </div>
           <p className="text-[10px] text-center text-muted-foreground">
-            Static Mock Mode • Generates structured simulated proposals
+            Strict ProposalSchema validation • Deterministic math execution
           </p>
         </form>
       </CardFooter>

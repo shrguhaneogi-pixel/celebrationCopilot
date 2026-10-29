@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { MOCK_EVENT_PLAN } from '@/lib/mock-data';
+import { EventPlan } from '@/domain/event-plan.schema';
 import { EventHeader } from '@/components/dashboard/EventHeader';
 import { BudgetTracker } from '@/components/dashboard/BudgetTracker';
 import { TimelineTracker } from '@/components/dashboard/TimelineTracker';
@@ -10,11 +11,30 @@ import { ChatSidebar } from '@/components/dashboard/ChatSidebar';
 import { Badge } from '@/components/ui/badge';
 import { Sparkles, DollarSign, Calendar, Users, MessageSquare } from 'lucide-react';
 
+const INITIAL_PLAN: EventPlan = {
+  id: MOCK_EVENT_PLAN.id,
+  version: 1,
+  title: MOCK_EVENT_PLAN.title,
+  eventType: MOCK_EVENT_PLAN.eventType,
+  eventDate: MOCK_EVENT_PLAN.eventDate,
+  timezone: 'Asia/Kolkata',
+  location: MOCK_EVENT_PLAN.venue,
+  guestCount: MOCK_EVENT_PLAN.guestCount,
+  currency: MOCK_EVENT_PLAN.currency,
+  totalCap: MOCK_EVENT_PLAN.totalCap,
+  items: MOCK_EVENT_PLAN.items,
+  milestones: MOCK_EVENT_PLAN.milestones,
+  vendors: MOCK_EVENT_PLAN.vendors,
+};
+
 export default function DashboardPage() {
+  const [plan, setPlan] = useState<EventPlan>(INITIAL_PLAN);
   const [activeTab, setActiveTab] = useState<'budget' | 'timeline' | 'vendors'>('budget');
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
-  const plan = MOCK_EVENT_PLAN;
+  const handleApplyPlan = (newPlan: EventPlan) => {
+    setPlan(newPlan);
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased flex flex-col">
@@ -37,14 +57,14 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-xs font-medium hidden sm:inline-flex">
-              Static Prototype
+              Plan v{plan.version} • Reactive
             </Badge>
 
             {/* Mobile Chat Toggle Button */}
             <button
               type="button"
               onClick={() => setMobileChatOpen(!mobileChatOpen)}
-              className="lg:hidden p-2 rounded-md border border-border bg-card text-foreground hover:bg-muted text-xs font-medium inline-flex items-center gap-1.5"
+              className="lg:hidden p-2 rounded-md border border-border bg-card text-foreground hover:bg-muted text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
             >
               <MessageSquare className="w-3.5 h-3.5 text-primary" />
               <span>{mobileChatOpen ? 'View Plan' : 'Planning AI'}</span>
@@ -128,8 +148,10 @@ export default function DashboardPage() {
           {/* Conversational Copilot Sidebar (4 columns) */}
           <aside className={`lg:col-span-4 sticky top-20 ${mobileChatOpen ? 'block' : 'hidden lg:block'}`}>
             <ChatSidebar
-              initialMessages={plan.chatHistory}
+              initialMessages={MOCK_EVENT_PLAN.chatHistory}
               currency={plan.currency}
+              currentPlan={plan}
+              onApplyPlan={handleApplyPlan}
             />
           </aside>
 
@@ -139,7 +161,7 @@ export default function DashboardPage() {
       {/* Footer */}
       <footer className="border-t border-border mt-auto py-4 text-center text-xs text-muted-foreground">
         <p>
-          Celebration Copilot • Deterministic Reactive State Engine • Prototype with Typed Mock Data
+          Celebration Copilot • Deterministic Reactive State Engine • Vercel AI SDK Integration
         </p>
       </footer>
     </div>
