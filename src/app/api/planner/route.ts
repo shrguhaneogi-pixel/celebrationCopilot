@@ -6,6 +6,7 @@ import { applyProposal } from '@/domain/planning-engine';
 import { generatePlannerProposal, AIProviderError } from '@/lib/ai/provider';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthoritativeEvent, getOrCreateUserEvent } from '@/lib/supabase/events';
+import { checkRateLimit } from '@/lib/rate-limiter';
 
 const PlannerRequestSchema = z
   .object({
@@ -27,6 +28,28 @@ export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
+    // 0. Rate Limiting Guard (Sliding-window per IP)
+    const rawForwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
+    const rawRealIp = req.headers.get('x-real-ip')?.trim();
+    const clientIp = rawForwarded || rawRealIp || '127.0.0.1';
+
+    const rateLimitResult = checkRateLimit(clientIp);
+    if (!rateLimitResult.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Too many requests. Please wait a moment before proposing further event changes.',
+        },
+        {
+          status: 429,
+          headers: {
+            ...SECURITY_HEADERS,
+            'Retry-After': String(Math.max(1, Math.ceil(rateLimitResult.resetMs / 1000))),
+          },
+        }
+      );
+    }
+
     let body: unknown;
     try {
       body = await req.json();

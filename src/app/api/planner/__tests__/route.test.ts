@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { POST } from '../route';
 import { EventPlan } from '@/domain/event-plan.schema';
 import * as provider from '@/lib/ai/provider';
+import { resetRateLimit } from '@/lib/rate-limiter';
 
 describe('POST /api/planner Route Handler', () => {
   const basePlan: EventPlan = {
@@ -41,6 +42,7 @@ describe('POST /api/planner Route Handler', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    resetRateLimit();
   });
 
   it('returns 400 when body is malformed JSON', async () => {
@@ -164,5 +166,99 @@ describe('POST /api/planner Route Handler', () => {
     const data = await res.json();
     expect(data.success).toBe(false);
     expect(data.error).toContain('timed out');
+  });
+
+  it('returns 429 with Retry-After header when client IP exceeds rate limit', async () => {
+    const ip = '198.51.100.42';
+
+    // Exhaust 15 allowed requests within the 1-minute window
+    for (let i = 0; i < 15; i++) {
+      const req = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: 'Increase guests to 150',
+          currentPlan: basePlan,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': ip,
+        },
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+    }
+
+    // 16th request from the same IP must be rejected with 429 and Retry-After header
+    const blockedReq = new NextRequest('http://localhost:3000/api/planner', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: 'Increase guests to 160',
+        currentPlan: basePlan,
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-forwarded-for': ip,
+      },
+    });
+
+    const blockedRes = await POST(blockedReq);
+    expect(blockedRes.status).toBe(429);
+    expect(blockedRes.headers.get('Retry-After')).toBeDefined();
+    expect(Number(blockedRes.headers.get('Retry-After'))).toBeGreaterThan(0);
+    const data = await blockedRes.json();
+    expect(data.success).toBe(false);
+    expect(data.error).toContain('Too many requests');
+  });
+
+  it('correctly handles chained x-forwarded-for headers and preserves distinct IP quotas', async () => {
+    const ipExhausted = '203.0.113.195';
+    const ipFresh = '198.51.100.99';
+
+    // Exhaust ipExhausted using chained x-forwarded-for header with spaces
+    for (let i = 0; i < 15; i++) {
+      const req = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: 'Update plan',
+          currentPlan: basePlan,
+        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': `  ${ipExhausted}  , 10.0.0.1, 192.168.1.1`,
+        },
+      });
+      const res = await POST(req);
+      expect(res.status).toBe(200);
+    }
+
+    // ipExhausted should be blocked
+    const blockedReq = new NextRequest('http://localhost:3000/api/planner', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: 'Update plan again',
+        currentPlan: basePlan,
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-forwarded-for': `${ipExhausted}, 10.0.0.1`,
+      },
+    });
+    const blockedRes = await POST(blockedReq);
+    expect(blockedRes.status).toBe(429);
+
+    // ipFresh using x-real-ip fallback should succeed without interference
+    const freshReq = new NextRequest('http://localhost:3000/api/planner', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: 'Update plan from other client',
+        currentPlan: basePlan,
+      }),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-real-ip': `  ${ipFresh}  `,
+      },
+    });
+    const freshRes = await POST(freshReq);
+    expect(freshRes.status).toBe(200);
   });
 });
