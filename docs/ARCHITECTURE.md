@@ -1,8 +1,8 @@
 # Celebration Copilot: System Architecture Specification
 
-> **Status:** Active Architectural Design  
-> **Last Verified:** 2026-10-29  
-> **Stack:** Next.js 15 App Router, React 19, TypeScript (Strict), Tailwind CSS v4, Zod, Vercel AI SDK, Supabase (Postgres + Auth)
+> **Status:** Active Architectural Design (As-Built Verified)
+> **Last Verified:** 2026-10-29
+> **Stack:** Next.js 16 App Router, React 19, TypeScript (Strict), Tailwind CSS v4, Zod, Vercel AI SDK 7.0, Supabase (PostgreSQL + Auth SSR)
 
 ---
 
@@ -11,58 +11,59 @@
 Celebration Copilot enforces a unidirectional, validated dataflow. The AI never has direct access to the database, application state, or arithmetic operations.
 
 ```
-+───────────────────────────────────────────────────────────────────────────────────+
-│                                 BROWSER CLIENT                                    │
-│                                                                                   │
-│  [User Conversational Prompt]                                                    │
-│               │                                                                   │
-│               ▼                                                                   │
-│     POST /api/plan/propose (with current plan summary)                            │
-+───────────────┼───────────────────────────────────────────────────────────────────+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                             BROWSER CLIENT                                  │
+│                                                                             │
+│  [User Conversational Prompt]                                               │
+│               │                                                             │
+│               ▼                                                             │
+│     POST /api/planner (with current plan summary)                           │
+└───────────────┬─────────────────────────────────────────────────────────────┘
                 │ HTTPS (JSON)
                 ▼
-+───────────────────────────────────────────────────────────────────────────────────+
-│                           SERVER: NEXT.JS APP ROUTER                              │
-│                                                                                   │
-│  1. Inbound Request Validation                                                    │
-│     └── Zod schema validates { prompt, currentPlan }                              │
-│                                                                                   │
-│  2. AI Inference Boundary                                                         │
-│     └── Vercel AI SDK: generateObject({ model: google('gemini-2.5-flash') })      │
-│     └── Constrained output strictly enforcing EventPlanProposalSchema             │
-│                                                                                   │
-│  3. Response Headers                                                              │
-│     └── Cache-Control: private, no-cache, no-store, must-revalidate               │
-+───────────────┼───────────────────────────────────────────────────────────────────+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SERVER: NEXT.JS APP ROUTER                          │
+│                                                                             │
+│  1. Inbound Request Validation                                              │
+│     └── Zod schema validates { prompt, currentPlan }                        │
+│                                                                             │
+│  2. AI Inference Boundary                                                   │
+│     └── Vercel AI SDK: generateObject({ model: google('gemini-2.0-flash') })│
+│     └── Constrained output strictly enforcing ProposalSchema                │
+│     └── Automated fallback to deterministic heuristic simulator if offline  │
+│                                                                             │
+│  3. Response Headers                                                        │
+│     └── Cache-Control: private, no-cache, no-store, must-revalidate         │
+└───────────────┬─────────────────────────────────────────────────────────────┘
                 │ HTTPS (JSON Proposal)
                 ▼
-+───────────────────────────────────────────────────────────────────────────────────+
-│                         BROWSER: DETERMINISTIC ENGINE                             │
-│                                                                                   │
-│  4. User Review & Approval                                                        │
-│     └── UI renders visual proposal diff (added items, cost deltas, offsets)       │
-│     └── User clicks "Apply to Plan" (or dismisses proposal)                       │
-│                                                                                   │
-│  5. Pure State Engine: applyProposal(currentPlan, proposal)                       │
-│     ├── Concurrency Check: Matches active plan.version                            │
-│     ├── Invariant Verification:                                                   │
-│     │   • ID existence for UPDATE/REMOVE mutations                                │
-│     │   • Non-negative costs and guest counts                                     │
-│     │   • Valid ISO date strings (YYYY-MM-DD)                                     │
-│     ├── Atomic Application: Valid deltas applied; invalid deltas rejected         │
-│     ├── Version Bump: Increment monotonic version counter (version + 1)           │
-│     └── Isolated Math Recalculation:                                              │
-│         • projectedTotal = sum(items.estimatedCost)                               │
-│         • committedTotal = sum(items[committed/paid].actualCost)                  │
-│         • remainingBudget = totalCap - projectedTotal                             │
-│         • milestone.dueDate = eventDate + offsetDays (UTC)                        │
-│                                                                                   │
-│  6. State Synchronization                                                         │
-│     ├── Immediate: Local React State + Browser LocalStorage                       │
-│     └── Cloud Sync (Optional/Authenticated):                                      │
-│         Supabase Postgres UPDATE event_plans                                      │
-│         WHERE id = :id AND version = :current_version                             │
-+───────────────────────────────────────────────────────────────────────────────────+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                       BROWSER: DETERMINISTIC ENGINE                         │
+│                                                                             │
+│  4. User Review & Approval                                                  │
+│     └── UI renders visual proposal diff (added items, cost deltas, offsets) │
+│     └── User clicks "Apply to Plan" (or dismisses proposal)                 │
+│                                                                             │
+│  5. Pure State Engine: applyProposal(currentPlan, proposal)                 │
+│     ├── Concurrency Check: Matches active plan.version                      │
+│     ├── Invariant Verification:                                             │
+│     │   • ID existence for UPDATE/REMOVE mutations                          │
+│     │   • Non-negative costs and guest counts                               │
+│     │   • Valid ISO date strings (YYYY-MM-DD)                               │
+│     ├── Atomic Application: Valid deltas applied; invalid deltas rejected   │
+│     ├── Version Bump: Increment monotonic version counter (version + 1)     │
+│     └── Isolated Math Recalculation:                                        │
+│         • projectedTotal = sum(items.estimatedCost)                         │
+│         • committedTotal = sum(items[committed/paid].actualCost)            │
+│         • remainingBudget = totalCap - projectedTotal                       │
+│         • milestone.dueDate = eventDate + offsetDays (UTC)                  │
+│                                                                             │
+│  6. State Synchronization                                                   │
+│     ├── Immediate: Local React State + Browser LocalStorage                 │
+│     └── Cloud Sync (Optional/Authenticated):                                │
+│         Supabase Postgres RPC update_event_plan(id, revision, data)         │
+│         guarded by Row-Level Security (auth.uid() = user_id)                │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -93,7 +94,7 @@ export interface EventPlan {
 ```
 
 ### 2.2 Derived Fields (Calculated on Demand)
-Derived metrics are **never saved to the database** and **never generated by the AI**. They are computed dynamically by pure selector functions:
+Derived metrics are **never saved to the database** and **never generated by the AI**. They are computed dynamically by pure selector functions in `src/domain/planning-engine.ts`:
 
 | Derived Field | Source Computation | Rationale |
 | :--- | :--- | :--- |
@@ -110,7 +111,7 @@ Derived metrics are **never saved to the database** and **never generated by the
 
 ## 3. The Proposal Mutation Boundary
 
-The LLM is constrained to outputting proposals matching the Zod schema allowlist:
+The LLM is constrained to outputting proposals matching the Zod schema allowlist (`src/domain/proposal.schema.ts`):
 
 ```typescript
 export const PlanMutationSchema = z.discriminatedUnion('type', [
@@ -186,31 +187,46 @@ export const PlanMutationSchema = z.discriminatedUnion('type', [
 ## 4. Invariant Checking & Error Recovery
 
 ### 4.1 Invariant Rules
-The pure engine (`src/lib/domain/engine.ts`) enforces the following invariants:
-1. **Target ID Existence:** An `UPDATE_BUDGET_ITEM` or `REMOVE_BUDGET_ITEM` mutation must specify an ID that exists in the current plan. If the ID does not exist, the mutation is added to `rejectedMutations` and state is untouched.
+The pure engine (`src/domain/planning-engine.ts`) enforces the following invariants:
+1. **Target ID Existence:** An `UPDATE_BUDGET_ITEM`, `REMOVE_BUDGET_ITEM`, `UPDATE_MILESTONE`, `REMOVE_MILESTONE`, `UPDATE_VENDOR`, or `REMOVE_VENDOR` mutation must specify an ID that exists in the current plan. If the ID does not exist, the mutation is added to `rejectedMutations` and the plan is untouched.
 2. **Integer Currency Non-Negativity:** `estimatedCost`, `actualCost`, and `totalCap` must be non-negative integers representing cents.
 3. **Monotonic Versioning:** Every successful batch of mutations increments `plan.version` by exactly 1 and updates `updatedAt` with an ISO timestamp.
 4. **Chronological Milestone Sorting:** Any addition or offset update automatically sorts `plan.milestones` ascending by `offsetDays`.
 
 ### 4.2 Optimistic Concurrency Control
-When persisting to cloud storage (Supabase):
+When persisting to cloud storage (Supabase PostgreSQL), atomic updates are managed through the `update_event_plan` stored procedure:
 ```sql
-UPDATE public.event_plans
-SET version = :next_version,
-    data = :next_plan_json,
-    updated_at = now()
-WHERE id = :plan_id
-  AND version = :expected_version;
+CREATE OR REPLACE FUNCTION update_event_plan(
+  p_event_id UUID,
+  p_expected_revision INT,
+  p_new_plan JSONB
+)
+RETURNS SETOF public.events
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $$
+BEGIN
+  RETURN QUERY
+  UPDATE public.events
+  SET plan = p_new_plan,
+      revision = revision + 1,
+      updated_at = timezone('utc'::text, now())
+  WHERE id = p_event_id
+    AND user_id = auth.uid()
+    AND revision = p_expected_revision
+  RETURNING *;
+END;
+$$;
 ```
-If the affected row count is 0, a concurrent modification conflict is detected. The local client displays a non-destructive merge notice rather than silently overwriting the remote changes.
+If the affected row count is 0, a concurrent modification conflict is detected, preventing silent overwrite of remote state.
 
 ---
 
 ## 5. Security & Boundary Isolation
 
 ### 5.1 Client vs. Server Code Separation
-* **Client Boundary:** UI components, React hooks (`useEventPlan`), and LocalStorage operations operate solely on serialized `EventPlan` structures. No secret API keys are ever bundled or exposed to the client.
-* **Server Boundary:** `/api/plan/propose` runs exclusively on the Node.js runtime. Secrets (`GOOGLE_GENERATIVE_AI_API_KEY`, Supabase Service Keys) are accessed via `process.env`.
+* **Client Boundary:** UI components, React context (`EventPlanContext`), and LocalStorage operations operate solely on serialized `EventPlan` structures. No secret API keys are ever bundled or exposed to the client.
+* **Server Boundary:** `/api/planner` runs exclusively on the Node.js runtime. Secrets (`GOOGLE_GENERATIVE_AI_API_KEY`) are accessed via `process.env`.
 
 ### 5.2 Cache & Cookie Directives
 In accordance with Next.js App Router security patterns, all endpoints delivering user-specific plans or handling auth tokens enforce strict private caching directives:
@@ -223,16 +239,28 @@ response.headers.set('Expires', '0');
 ### 5.3 PostgreSQL Row-Level Security (RLS)
 Supabase policies verify direct tenant ownership on every query:
 ```sql
--- Secure tenant isolation
-CREATE POLICY "Users can only read own plans"
-ON public.event_plans FOR SELECT
+ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.events FORCE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can only read own events"
+ON public.events FOR SELECT
 TO authenticated
 USING (auth.uid() = user_id);
 
-CREATE POLICY "Users can only update own plans with matching version"
-ON public.event_plans FOR UPDATE
+CREATE POLICY "Users can only insert own events"
+ON public.events FOR INSERT
+TO authenticated
+WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can only update own events"
+ON public.events FOR UPDATE
 TO authenticated
 USING (auth.uid() = user_id)
 WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can only delete own events"
+ON public.events FOR DELETE
+TO authenticated
+USING (auth.uid() = user_id);
 ```
 *(Avoids the vulnerable `USING (auth.uid() IS NOT NULL)` anti-pattern).*

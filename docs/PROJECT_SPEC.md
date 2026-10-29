@@ -1,9 +1,9 @@
 # Celebration Copilot: Project Specification
 
-> **Status:** Active MVP Specification  
-> **Last Verified:** 2026-10-29  
-> **Target Environment:** Public Web Application (Next.js 15, Tailwind CSS v4, TypeScript)  
-> **Primary Repository Limit:** Under 5 MB tracked (Strict organizer upper bound: < 10 MB)  
+> **Status:** Active MVP Specification
+> **Last Verified:** 2026-10-29
+> **Target Environment:** Public Web Application (Next.js 15, Tailwind CSS v4, TypeScript)
+> **Primary Repository Limit:** Under 5 MB tracked (Strict organizer upper bound: < 10 MB)
 > **AI Mutation Latency Goal:** Under 2,500 ms (measured roundtrip)
 
 ---
@@ -93,8 +93,8 @@ To comply with transparent product design and DEV community guidelines:
 ## 6. User Stories & Acceptance Criteria
 
 ### US-1: Conversational Plan Revision
-* **As an** event organizer,  
-* **I want to** type natural requests like "Add a live jazz trio and a milestone to book them 3 months early",  
+* **As an** event organizer,
+* **I want to** type natural requests like "Add a live jazz trio and a milestone to book them 3 months early",
 * **So that** I can rapidly flesh out my event without filling out dozens of forms.
 * **Acceptance Criteria:**
   1. The assistant must return an `EventPlanProposal` containing discrete mutations within 2,500 ms (measured).
@@ -102,8 +102,8 @@ To comply with transparent product design and DEV community guidelines:
   3. Clicking "Apply to Plan" updates the active plan; clicking "Dismiss" leaves state untouched.
 
 ### US-2: Deterministic Budget Tracking
-* **As a** host managing a tight budget,  
-* **I want to** see total projected costs, committed payments, and remaining funds update instantly as line items change,  
+* **As a** host managing a tight budget,
+* **I want to** see total projected costs, committed payments, and remaining funds update instantly as line items change,
 * **So that** I never accidentally exceed my budget ceiling.
 * **Acceptance Criteria:**
   1. All line item additions, deletions, and updates must execute via the deterministic engine.
@@ -111,8 +111,8 @@ To comply with transparent product design and DEV community guidelines:
   3. If projected costs exceed `totalCap`, an alert banner and over-budget indicator must display immediately.
 
 ### US-3: Adaptive Event-Relative Timeline
-* **As a** planner adjusting an event date,  
-* **I want to** change the celebration date and have all milestones update their target dates automatically,  
+* **As a** planner adjusting an event date,
+* **I want to** change the celebration date and have all milestones update their target dates automatically,
 * **So that** I do not have to manually recalculate dozens of deadlines.
 * **Acceptance Criteria:**
   1. Changing `eventDate` in the header immediately recalculates all milestone `dueDate` fields using UTC date arithmetic.
@@ -120,8 +120,8 @@ To comply with transparent product design and DEV community guidelines:
   3. Marking a milestone complete updates timeline progress percentage deterministically.
 
 ### US-4: Offline & Failure Resilience
-* **As a** user operating in poor network conditions or without an API key,  
-* **I want to** create and modify plans locally,  
+* **As a** user operating in poor network conditions or without an API key,
+* **I want to** create and modify plans locally,
 * **So that** my data is never lost or blocked by third-party downtime.
 * **Acceptance Criteria:**
   1. All changes automatically persist to browser `localStorage`.
@@ -132,8 +132,8 @@ To comply with transparent product design and DEV community guidelines:
 
 ## 7. SMART Goals & Metrics
 
-1. **AI Roundtrip Latency (Measurable):** Measured response time for `/api/plan/propose` under 2,500 ms under normal network conditions.
-2. **Tracked Git Repository Size (Strict Boundary):** Tracked repository size must remain strictly under 5.0 MB (measured at ~362 KB; organizer upper limit is 10 MB).
+1. **AI Roundtrip Latency (Measurable):** Measured response time for `/api/planner` under 2,500 ms under normal network conditions.
+2. **Tracked Git Repository Size (Strict Boundary):** Tracked repository size must remain strictly under 5.0 MB (measured at ~550 KB; organizer upper limit is 10 MB).
 3. **Unit Test Pass Rate (Quality):** 100% test pass rate across all pure domain functions, invariants, and route handlers.
 4. **Accessibility (Usability):** Keyboard-navigable inputs, ARIA-accessible tab panels, and WCAG AA color contrast compliance across light and dark tokens.
 
