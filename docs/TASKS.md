@@ -10,7 +10,7 @@
 | Phase | Description | Owner / Role | Status | Evidence / Verification Artifact |
 | :--- | :--- | :--- | :--- | :--- |
 | **Phase 0** | Workspace Bootstrap & Size Gates | Lead Architect | **COMPLETE** | Commit `c2b71f9`; `./scripts/check-size.sh` PASSED (319 KB tracked); CI workflow passing. |
-| **Phase 1** | Pure Domain Model & State Engine | Domain Engineer | **PENDING** | Awaiting bounded Phase 1 implementation & Vitest suite. |
+| **Phase 1** | Pure Domain Model & State Engine | Domain Engineer | **COMPLETE** | Commit `75c41ec`; 20/20 domain unit tests passing (27/27 overall suite); 400 KB tracked. |
 | **Phase 2** | Reactive UI Baseline (No-AI State) | Frontend Engineer| **PENDING** | Blocked by Phase 1 completion. |
 | **Phase 3** | AI Mutation Proposal Pipeline | AI Engineer | **PENDING** | Blocked by Phase 2 completion. |
 | **Phase 4** | Supabase Auth, Persistence & RLS | Fullstack Engineer| **PENDING** | Awaiting Supabase project URL & anon key configuration. |
@@ -41,13 +41,17 @@
 * **Objective:** Create the canonical `EventPlan` data structures, Zod mutation schemas, and pure deterministic calculation functions.
 * **Dependencies:** Phase 0.
 * **Tasks:**
-  - [ ] **TASK-101:** Define canonical `EventPlan`, `BudgetItem`, `Milestone`, and `VendorChecklistItem` interfaces in `src/lib/domain/types.ts`.
-  - [ ] **TASK-102:** Implement Zod discriminated union `PlanMutationSchema` and `EventPlanProposalSchema` in `src/lib/domain/mutations.ts`.
-  - [ ] **TASK-103:** Implement pure state engine in `src/lib/domain/engine.ts`:
-    - `applyProposal(currentPlan, proposal)`: atomic updates, version increment, ID existence checking.
-    - `calculateTotals(plan)`: integer-cent arithmetic for projected, committed, actual, and variance.
-    - `computeDueDate(eventDate, offsetDays)`: UTC date arithmetic.
-  - [ ] **TASK-104:** Write automated unit tests in `src/lib/domain/__tests__/engine.test.ts` verifying 100% test pass rate across arithmetic precision, mutation safety, and invariant error boundaries.
+  - [x] **TASK-101:** Define canonical `EventPlan`, `BudgetItem`, `Milestone`, and `VendorTask` schemas and inferred types in `src/domain/event-plan.schema.ts`.  
+    *Evidence:* Strict Zod parsing and strict TypeScript compilation verified.
+  - [x] **TASK-102:** Implement Zod discriminated union `PlanMutationSchema` and `ProposalSchema` in `src/domain/proposal.schema.ts`.  
+    *Evidence:* Type narrowing verified across 12 discrete mutation operations.
+  - [x] **TASK-103:** Implement pure state engine in `src/domain/planning-engine.ts`:
+    - `applyProposal(currentPlan, proposal)`: atomic updates, version increment, ID existence checking, and full rollback.
+    - `calculateTotals(plan)`: integer minor unit arithmetic for projected, committed, actual, and variance.
+    - `computeDueDate(eventDate, offsetDays)`: UTC date arithmetic.  
+    *Evidence:* Complete unit test suite passing in 33ms.
+  - [x] **TASK-104:** Write automated unit tests in `tests/domain.test.ts` verifying 100% test pass rate across arithmetic precision, mutation safety, and invariant error boundaries.  
+    *Evidence:* Ran `npm test` -> 20/20 tests passing in `tests/domain.test.ts` (27/27 overall suite).
 
 ---
 
