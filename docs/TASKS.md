@@ -9,10 +9,10 @@
 
 | Phase | Description | Owner / Role | Status | Evidence / Verification Artifact |
 | :--- | :--- | :--- | :--- | :--- |
-| **Phase 0** | Workspace Bootstrap & Size Gates | Lead Architect | **COMPLETE** | Commit `6b08e07`; `./scripts/check-size.sh` PASSED (297 KB tracked). |
-| **Phase 1** | Pure Domain Model & State Engine | Domain Engineer | **COMPLETE** | 6/6 Vitest unit tests passed (`src/lib/domain/__tests__/engine.test.ts`). |
-| **Phase 2** | Reactive UI Baseline (No-AI State) | Frontend Engineer| **COMPLETE** | Commit `9b35d69`; LocalStorage persistence verified. |
-| **Phase 3** | AI Mutation Proposal Pipeline | AI Engineer | **COMPLETE** | Commit `6b32f48`; Route tests passing (`route.test.ts`); `next build` 0 errors. |
+| **Phase 0** | Workspace Bootstrap & Size Gates | Lead Architect | **COMPLETE** | Commit `c2b71f9`; `./scripts/check-size.sh` PASSED (319 KB tracked); CI workflow passing. |
+| **Phase 1** | Pure Domain Model & State Engine | Domain Engineer | **PENDING** | Awaiting bounded Phase 1 implementation & Vitest suite. |
+| **Phase 2** | Reactive UI Baseline (No-AI State) | Frontend Engineer| **PENDING** | Blocked by Phase 1 completion. |
+| **Phase 3** | AI Mutation Proposal Pipeline | AI Engineer | **PENDING** | Blocked by Phase 2 completion. |
 | **Phase 4** | Supabase Auth, Persistence & RLS | Fullstack Engineer| **PENDING** | Awaiting Supabase project URL & anon key configuration. |
 | **Phase 5** | Public Deployment & Hackathon Polish | Release Engineer | **PENDING** | Blocked by Phase 4 completion. |
 
@@ -31,6 +31,8 @@
     *Evidence:* Ran `./scripts/check-size.sh` -> Output: `Repository size check PASSED: Strictly within budget.`
   - [x] **TASK-004:** Configure `package.json`, `tsconfig.json`, `postcss.config.mjs`, and Tailwind CSS v4 in `src/app/globals.css`.  
     *Evidence:* Successful `npm install` and Next.js compilation.
+  - [x] **TASK-005:** Configure modern Flat Config ESLint (`eslint.config.mjs`), smoke test (`src/__tests__/smoke.test.ts`), and CI pipeline (`.github/workflows/ci.yml`).
+    *Evidence:* Commit `c2b71f9`; `npm run check-size`, `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all passing.
 
 ---
 
@@ -39,17 +41,13 @@
 * **Objective:** Create the canonical `EventPlan` data structures, Zod mutation schemas, and pure deterministic calculation functions.
 * **Dependencies:** Phase 0.
 * **Tasks:**
-  - [x] **TASK-101:** Define canonical `EventPlan`, `BudgetItem`, `Milestone`, and `VendorChecklistItem` interfaces in `src/lib/domain/types.ts`.  
-    *Evidence:* TypeScript compiles with `"strict": true`.
-  - [x] **TASK-102:** Implement Zod discriminated union `PlanMutationSchema` and `EventPlanProposalSchema` in `src/lib/domain/mutations.ts`.  
-    *Evidence:* Type narrowing verified in TypeScript.
-  - [x] **TASK-103:** Implement pure state engine in `src/lib/domain/engine.ts`:
+  - [ ] **TASK-101:** Define canonical `EventPlan`, `BudgetItem`, `Milestone`, and `VendorChecklistItem` interfaces in `src/lib/domain/types.ts`.
+  - [ ] **TASK-102:** Implement Zod discriminated union `PlanMutationSchema` and `EventPlanProposalSchema` in `src/lib/domain/mutations.ts`.
+  - [ ] **TASK-103:** Implement pure state engine in `src/lib/domain/engine.ts`:
     - `applyProposal(currentPlan, proposal)`: atomic updates, version increment, ID existence checking.
     - `calculateTotals(plan)`: integer-cent arithmetic for projected, committed, actual, and variance.
-    - `computeDueDate(eventDate, offsetDays)`: UTC date arithmetic.  
-    *Evidence:* Complete unit test suite.
-  - [x] **TASK-104:** Write automated unit tests in `src/lib/domain/__tests__/engine.test.ts`.  
-    *Evidence:* Ran `npm test` -> 6/6 tests passing in 21ms.
+    - `computeDueDate(eventDate, offsetDays)`: UTC date arithmetic.
+  - [ ] **TASK-104:** Write automated unit tests in `src/lib/domain/__tests__/engine.test.ts` verifying 100% test pass rate across arithmetic precision, mutation safety, and invariant error boundaries.
 
 ---
 
@@ -58,16 +56,11 @@
 * **Objective:** Build a responsive, accessible web UI that allows creating, editing, and tracking celebration plans entirely offline without external AI keys.
 * **Dependencies:** Phase 1.
 * **Tasks:**
-  - [x] **TASK-201:** Implement `src/hooks/useEventPlan.ts` with LocalStorage hydration and pure mutation dispatch.  
-    *Evidence:* State persists across page refreshes.
-  - [x] **TASK-202:** Implement `Header.tsx` with event date, guest counter, budget ceiling, and allocation progress bar.  
-    *Evidence:* Visual progress bar reflects integer variance percentage.
-  - [x] **TASK-203:** Implement `BudgetTable.tsx` with inline line-item editing and payment status management (`projected`, `quoted`, `committed`, `paid`).  
-    *Evidence:* Editing actual costs recalculates committed and projected totals instantly.
-  - [x] **TASK-204:** Implement `TimelineView.tsx` with relative offset badges and chronological sorting.  
-    *Evidence:* Adjusting event date in header updates timeline due dates immediately.
-  - [x] **TASK-205:** Implement `VendorChecklist.tsx` with priority tags, booking statuses, and one-click question clipboard copy.  
-    *Evidence:* Question copy button changes to "Copied!" with feedback toast.
+  - [ ] **TASK-201:** Implement `src/hooks/useEventPlan.ts` with LocalStorage hydration and pure mutation dispatch.
+  - [ ] **TASK-202:** Implement `Header.tsx` with event date, guest counter, budget ceiling, and allocation progress bar.
+  - [ ] **TASK-203:** Implement `BudgetTable.tsx` with inline line-item editing and payment status management (`projected`, `quoted`, `committed`, `paid`).
+  - [ ] **TASK-204:** Implement `TimelineView.tsx` with relative offset badges and chronological sorting.
+  - [ ] **TASK-205:** Implement `VendorChecklist.tsx` with priority tags, booking statuses, and one-click question clipboard copy.
 
 ---
 
@@ -76,16 +69,11 @@
 * **Objective:** Build the conversational AI proposal pipeline using Vercel AI SDK, strict Zod parsing, and an interactive review interface.
 * **Dependencies:** Phase 2.
 * **Tasks:**
-  - [x] **TASK-301:** Create Next.js route handler `/api/plan/propose` using Vercel AI SDK `generateObject` with Google Gemini 2.5 Flash and offline fallback simulation.  
-    *Evidence:* `src/app/api/plan/propose/route.ts` created and verified.
-  - [x] **TASK-302:** Enforce `Cache-Control: private, no-cache, no-store, must-revalidate` on API route.  
-    *Evidence:* Tested via `route.test.ts` checking response headers.
-  - [x] **TASK-303:** Implement `ChatPanel.tsx` with quick prompt chips, latency tracking badge, and proposal diff review card.  
-    *Evidence:* Applied proposals mutate state cleanly; dismissed proposals do not touch state.
-  - [x] **TASK-304:** Write automated route handler unit tests in `src/app/api/plan/propose/__tests__/route.test.ts`.  
-    *Evidence:* 2/2 tests passing; overall test suite 8/8 passing.
-  - [x] **TASK-305:** Verify production build with `npm run build`.  
-    *Evidence:* Production build exited with code 0 (`Compiled successfully in 4.4s`, static pages 5/5 generated).
+  - [ ] **TASK-301:** Create Next.js route handler `/api/plan/propose` using Vercel AI SDK `generateObject` with Google Gemini 2.5 Flash and offline fallback simulation.
+  - [ ] **TASK-302:** Enforce `Cache-Control: private, no-cache, no-store, must-revalidate` on API route.
+  - [ ] **TASK-303:** Implement `ChatPanel.tsx` with quick prompt chips, latency tracking badge, and proposal diff review card.
+  - [ ] **TASK-304:** Write automated route handler unit tests in `src/app/api/plan/propose/__tests__/route.test.ts`.
+  - [ ] **TASK-305:** Verify production build with `npm run build`.
 
 ---
 
