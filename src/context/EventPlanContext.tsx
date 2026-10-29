@@ -42,6 +42,7 @@ export interface EventPlanContextType {
   setIsSubmitting: (submitting: boolean) => void;
   clearError: () => void;
   dispatchMutation: (mutation: PlanMutation) => MutationResult;
+  dispatchMutations: (mutations: PlanMutation[]) => MutationResult;
   applyServerProposal: (newPlan: EventPlan, baseVersion: number, newRevision?: number) => MutationResult;
   resetPlan: () => void;
   signOut: () => Promise<void>;
@@ -152,27 +153,38 @@ export function EventPlanProvider({
   }, []);
 
   /**
-   * Dispatches a single mutation through pure domain validation and state update.
+   * Dispatches an atomic batch of mutations through pure domain validation and state update.
+   * Evaluates each mutation sequentially, recomputes dates, increments version by 1,
+   * commits to React state, and performs a single CAS update to Supabase.
    * Preserves previous valid state on failure.
    */
-  const dispatchMutation = useCallback(
-    (mutation: PlanMutation): MutationResult => {
+  const dispatchMutations = useCallback(
+    (mutations: PlanMutation[]): MutationResult => {
+      if (mutations.length === 0) {
+        return { success: true, plan };
+      }
+
       try {
-        // 1. Apply mutation through deterministic domain engine
-        let nextPlan = applyMutation(plan, mutation);
+        // 1. Deep clone plan to guarantee non-mutability on failure
+        let workingPlan = structuredClone(plan);
 
-        // 2. Recalculate milestone dates in case eventDate or offsets were altered
-        nextPlan = recalculateMilestoneDates(nextPlan);
+        // 2. Apply each mutation sequentially through deterministic domain engine
+        for (const mutation of mutations) {
+          workingPlan = applyMutation(workingPlan, mutation);
+        }
 
-        // 3. Increment monotonic version counter
-        nextPlan = {
-          ...nextPlan,
+        // 3. Recalculate milestone dates in case eventDate or offsets were altered
+        workingPlan = recalculateMilestoneDates(workingPlan);
+
+        // 4. Increment monotonic version counter
+        workingPlan = {
+          ...workingPlan,
           version: plan.version + 1,
           updatedAt: new Date().toISOString(),
         };
 
-        // 4. Verify resulting plan against canonical schema invariants
-        const validation = EventPlanSchema.safeParse(nextPlan);
+        // 5. Verify resulting plan against canonical schema invariants
+        const validation = EventPlanSchema.safeParse(workingPlan);
         if (!validation.success) {
           const errMsg = `Domain schema validation failed: ${validation.error.message}`;
           setError(errMsg);
@@ -181,12 +193,12 @@ export function EventPlanProvider({
 
         const nextRevision = revision + 1;
 
-        // 5. Commit state atomically
+        // 6. Commit state atomically once
         setPlan(validation.data);
         setRevision(nextRevision);
         setError(null);
 
-        // Async sync to Supabase if authenticated and eventId exists
+        // 7. Single async sync to Supabase if authenticated and eventId exists
         if (typeof window !== 'undefined' && eventId) {
           try {
             const supabase = createClient();
@@ -211,12 +223,23 @@ export function EventPlanProvider({
 
         return { success: true, plan: validation.data };
       } catch (err: unknown) {
-        const message = err instanceof DomainEngineError || err instanceof Error ? err.message : 'Unknown mutation error';
+        const message =
+          err instanceof DomainEngineError || err instanceof Error
+            ? err.message
+            : 'Unknown mutation error';
         setError(message);
         return { success: false, error: message };
       }
     },
     [plan, revision, eventId]
+  );
+
+  /**
+   * Dispatches a single mutation by delegating to dispatchMutations.
+   */
+  const dispatchMutation = useCallback(
+    (mutation: PlanMutation): MutationResult => dispatchMutations([mutation]),
+    [dispatchMutations]
   );
 
   /**
@@ -312,6 +335,7 @@ export function EventPlanProvider({
       setIsSubmitting,
       clearError,
       dispatchMutation,
+      dispatchMutations,
       applyServerProposal,
       resetPlan,
       signOut,
@@ -326,6 +350,7 @@ export function EventPlanProvider({
       error,
       clearError,
       dispatchMutation,
+      dispatchMutations,
       applyServerProposal,
       resetPlan,
       signOut,

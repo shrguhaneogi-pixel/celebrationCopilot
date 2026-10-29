@@ -4,6 +4,7 @@ import React from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { EventPlanProvider, useEventPlan, INITIAL_EVENT_PLAN } from '@/context/EventPlanContext';
 import { EventPlan } from '@/domain/event-plan.schema';
+import { PlanMutation } from '@/domain/proposal.schema';
 
 describe('EventPlanContext Canonical State & Manual Mutations', () => {
   beforeEach(() => {
@@ -314,5 +315,70 @@ describe('EventPlanContext Canonical State & Manual Mutations', () => {
     expect(result.current.plan.guestCount).toBe(INITIAL_EVENT_PLAN.guestCount);
     expect(result.current.plan.version).toBe(1);
     expect(result.current.error).toBeNull();
+  });
+
+  it('dispatches atomic batch of mutations via dispatchMutations without closure clobbering', () => {
+    const { result } = renderHook(() => useEventPlan(), { wrapper });
+    const initialVersion = result.current.plan.version;
+
+    const mutations: PlanMutation[] = [
+      {
+        type: 'SET_DETAILS',
+        eventDate: '2027-02-14',
+        location: 'Udaipur City Palace',
+      },
+      {
+        type: 'UPDATE_GUEST_COUNT',
+        guestCount: 350,
+      },
+      {
+        type: 'UPDATE_TARGET_BUDGET',
+        totalCap: 4500000,
+      },
+    ];
+
+    act(() => {
+      const res = result.current.dispatchMutations(mutations);
+      expect(res.success).toBe(true);
+    });
+
+    // All 3 updates applied atomically; version incremented once
+    expect(result.current.plan.version).toBe(initialVersion + 1);
+    expect(result.current.plan.eventDate).toBe('2027-02-14');
+    expect(result.current.plan.location).toBe('Udaipur City Palace');
+    expect(result.current.plan.guestCount).toBe(350);
+    expect(result.current.plan.totalCap).toBe(4500000);
+    expect(result.current.derivedMetrics.remainingBudget).toBe(
+      4500000 - result.current.derivedMetrics.projectedTotal
+    );
+    expect(result.current.error).toBeNull();
+  });
+
+  it('preserves state when any mutation in a batch fails', () => {
+    const { result } = renderHook(() => useEventPlan(), { wrapper });
+    const initialVersion = result.current.plan.version;
+    const initialGuests = result.current.plan.guestCount;
+
+    const mutations: PlanMutation[] = [
+      {
+        type: 'UPDATE_GUEST_COUNT',
+        guestCount: 400,
+      },
+      {
+        type: 'REMOVE_BUDGET_ITEM',
+        itemId: 'non-existent-item-id-xyz',
+      },
+    ];
+
+    act(() => {
+      const res = result.current.dispatchMutations(mutations);
+      expect(res.success).toBe(false);
+      expect(res.error).toBeDefined();
+    });
+
+    // Invariant: Failed batch must not leave partial mutations applied
+    expect(result.current.plan.version).toBe(initialVersion);
+    expect(result.current.plan.guestCount).toBe(initialGuests);
+    expect(result.current.error).toBeDefined();
   });
 });

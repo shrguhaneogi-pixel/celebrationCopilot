@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
 import { MockEventPlan } from '@/lib/mock-data';
 import { EventPlan } from '@/domain/event-plan.schema';
+import { PlanMutation } from '@/domain/proposal.schema';
 import { useEventPlan } from '@/context/EventPlanContext';
 
 interface EventHeaderProps {
@@ -20,12 +21,14 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
   let contextPlan: EventPlan | undefined;
   let contextMetrics: ReturnType<typeof useEventPlan>['derivedMetrics'] | undefined;
   let dispatchMutation: ReturnType<typeof useEventPlan>['dispatchMutation'] | undefined;
+  let dispatchMutations: ReturnType<typeof useEventPlan>['dispatchMutations'] | undefined;
 
   try {
     const context = useEventPlan();
     contextPlan = context.plan;
     contextMetrics = context.derivedMetrics;
     dispatchMutation = context.dispatchMutation;
+    dispatchMutations = context.dispatchMutations;
   } catch {
     // Graceful fallback if rendered outside provider
   }
@@ -77,7 +80,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
 
   const handleSaveEdit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!dispatchMutation) {
+    if (!dispatchMutations && !dispatchMutation) {
       setIsEditing(false);
       return;
     }
@@ -95,34 +98,32 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
       return;
     }
 
-    // 1. Dispatch SET_DETAILS for date and location
-    const detailsRes = dispatchMutation({
-      type: 'SET_DETAILS',
-      eventDate: editDate.trim() ? editDate.trim() : null,
-      location: editLocation.trim(),
-    });
-    if (!detailsRes.success) {
-      setEditError(detailsRes.error || 'Failed to update event details.');
-      return;
-    }
+    const mutations: PlanMutation[] = [
+      {
+        type: 'SET_DETAILS',
+        eventDate: editDate.trim() ? editDate.trim() : null,
+        location: editLocation.trim(),
+      },
+      {
+        type: 'UPDATE_GUEST_COUNT',
+        guestCount: guestsNum,
+      },
+      {
+        type: 'UPDATE_TARGET_BUDGET',
+        totalCap: capNum,
+      },
+    ];
 
-    // 2. Dispatch UPDATE_GUEST_COUNT
-    const guestRes = dispatchMutation({
-      type: 'UPDATE_GUEST_COUNT',
-      guestCount: guestsNum,
-    });
-    if (!guestRes.success) {
-      setEditError(guestRes.error || 'Failed to update guest count.');
-      return;
-    }
+    const res = dispatchMutations
+      ? dispatchMutations(mutations)
+      : dispatchMutation!({
+          type: 'SET_DETAILS',
+          eventDate: editDate.trim() ? editDate.trim() : null,
+          location: editLocation.trim(),
+        });
 
-    // 3. Dispatch UPDATE_TARGET_BUDGET
-    const capRes = dispatchMutation({
-      type: 'UPDATE_TARGET_BUDGET',
-      totalCap: capNum,
-    });
-    if (!capRes.success) {
-      setEditError(capRes.error || 'Failed to update target budget ceiling.');
+    if (!res.success) {
+      setEditError(res.error || 'Failed to update event details.');
       return;
     }
 
@@ -143,7 +144,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
               {activePlan.eventType}
             </Badge>
 
-            {dispatchMutation && !isEditing && (
+            {(dispatchMutations || dispatchMutation) && !isEditing && (
               <Button
                 variant="ghost"
                 size="sm"
