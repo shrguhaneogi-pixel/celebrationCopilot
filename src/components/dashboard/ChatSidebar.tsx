@@ -24,6 +24,7 @@ export function ChatSidebar({
   onApplyPlan: propOnApplyPlan,
 }: ChatSidebarProps) {
   let contextPlan: ReturnType<typeof useEventPlan>['plan'] | undefined;
+  let contextEventId: string | null | undefined;
   let contextIsSubmitting: boolean = false;
   let contextApplyServerProposal: ReturnType<typeof useEventPlan>['applyServerProposal'] | undefined;
   let setIsSubmitting: ((s: boolean) => void) | undefined;
@@ -31,6 +32,7 @@ export function ChatSidebar({
   try {
     const context = useEventPlan();
     contextPlan = context.plan;
+    contextEventId = context.eventId;
     contextIsSubmitting = context.isSubmitting;
     contextApplyServerProposal = context.applyServerProposal;
     setIsSubmitting = context.setIsSubmitting;
@@ -46,6 +48,7 @@ export function ChatSidebar({
   const [isLoading, setIsLoading] = useState(false);
   const [stagedPlan, setStagedPlan] = useState<EventPlan | null>(null);
   const [stagedBaseVersion, setStagedBaseVersion] = useState<number | null>(null);
+  const [stagedRevision, setStagedRevision] = useState<number | null>(null);
   const [appliedProposal, setAppliedProposal] = useState(false);
   const [dismissedProposal, setDismissedProposal] = useState(false);
   const [lastPrompt, setLastPrompt] = useState<string | null>(null);
@@ -62,7 +65,7 @@ export function ChatSidebar({
     if (!stagedPlan) return;
 
     if (contextApplyServerProposal && stagedBaseVersion !== null) {
-      const res = contextApplyServerProposal(stagedPlan, stagedBaseVersion);
+      const res = contextApplyServerProposal(stagedPlan, stagedBaseVersion, stagedRevision ?? undefined);
       if (res.success) {
         setAppliedProposal(true);
         setLiveAnnouncement('Proposal applied successfully to event plan.');
@@ -87,6 +90,7 @@ export function ChatSidebar({
     setDismissedProposal(true);
     setStagedPlan(null);
     setStagedBaseVersion(null);
+    setStagedRevision(null);
     setLiveAnnouncement('Proposal dismissed.');
   };
 
@@ -115,6 +119,7 @@ export function ChatSidebar({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: promptText,
+          eventId: contextEventId || undefined,
           currentPlan: activePlan,
         }),
       });
@@ -127,6 +132,8 @@ export function ChatSidebar({
         if (!planValidation.success) {
           throw new Error(`Client rejected invalid plan response: ${planValidation.error.message}`);
         }
+
+        setStagedRevision(data.revision || null);
 
         let costDelta = 0;
         const mutationsList: string[] = [];

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useMemo, useCall
 import { EventPlan, EventPlanSchema, DerivedEventMetrics } from '@/domain/event-plan.schema';
 import { PlanMutation } from '@/domain/proposal.schema';
 import { applyMutation, calculateTotals, recalculateMilestoneDates, DomainEngineError } from '@/domain/planning-engine';
+import { createClient } from '@/lib/supabase/client';
 import { MOCK_EVENT_PLAN } from '@/lib/mock-data';
 
 export const INITIAL_EVENT_PLAN: EventPlan = {
@@ -32,14 +33,18 @@ export interface MutationResult {
 
 export interface EventPlanContextType {
   plan: EventPlan;
+  eventId: string | null;
+  revision: number;
+  userEmail: string | null;
   derivedMetrics: DerivedEventMetrics;
   isSubmitting: boolean;
   error: string | null;
   setIsSubmitting: (submitting: boolean) => void;
   clearError: () => void;
   dispatchMutation: (mutation: PlanMutation) => MutationResult;
-  applyServerProposal: (newPlan: EventPlan, baseVersion: number) => MutationResult;
+  applyServerProposal: (newPlan: EventPlan, baseVersion: number, newRevision?: number) => MutationResult;
   resetPlan: () => void;
+  signOut: () => Promise<void>;
 }
 
 const EventPlanContext = createContext<EventPlanContextType | null>(null);
@@ -49,12 +54,16 @@ const STORAGE_KEY = 'celebration_copilot_event_plan';
 interface EventPlanProviderProps {
   children: React.ReactNode;
   initialPlan?: EventPlan;
+  initialEventId?: string | null;
+  initialRevision?: number;
   persistToLocalStorage?: boolean;
 }
 
 export function EventPlanProvider({
   children,
   initialPlan = INITIAL_EVENT_PLAN,
+  initialEventId = null,
+  initialRevision = 1,
   persistToLocalStorage = true,
 }: EventPlanProviderProps) {
   const [plan, setPlan] = useState<EventPlan>(() => {
@@ -69,14 +78,60 @@ export function EventPlanProvider({
           }
         }
       } catch {
-        // Fallback to initialPlan if localStorage is invalid or unreadable
+        // Fallback to initialPlan if localStorage is unreadable
       }
     }
     return initialPlan;
   });
 
+  const [eventId, setEventId] = useState<string | null>(initialEventId);
+  const [revision, setRevision] = useState<number>(initialRevision);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sync session & authoritative event from Supabase on client mount
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadSupabaseSession() {
+      if (typeof window === 'undefined') return;
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+
+        if (user && isMounted) {
+          setUserEmail(user.email || null);
+
+          // Fetch user's authoritative event from PostgreSQL
+          const { data, error: fetchErr } = await supabase
+            .from('events')
+            .select('*')
+            .eq('user_id', user.id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (!fetchErr && data && isMounted) {
+            const parsed = EventPlanSchema.safeParse(data.plan);
+            if (parsed.success) {
+              setPlan(parsed.data);
+              setEventId(data.id);
+              setRevision(data.revision);
+            }
+          }
+        }
+      } catch {
+        // Supabase unconfigured or offline
+      }
+    }
+
+    loadSupabaseSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Sync state to LocalStorage
   useEffect(() => {
@@ -124,9 +179,36 @@ export function EventPlanProvider({
           return { success: false, error: errMsg };
         }
 
+        const nextRevision = revision + 1;
+
         // 5. Commit state atomically
         setPlan(validation.data);
+        setRevision(nextRevision);
         setError(null);
+
+        // Async sync to Supabase if authenticated and eventId exists
+        if (typeof window !== 'undefined' && eventId) {
+          try {
+            const supabase = createClient();
+            supabase
+              .from('events')
+              .update({
+                plan: validation.data,
+                revision: nextRevision,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', eventId)
+              .eq('revision', revision)
+              .then(({ error: syncErr }) => {
+                if (syncErr) {
+                  setError(`Remote sync error: ${syncErr.message}`);
+                }
+              });
+          } catch {
+            // Ignore offline errors
+          }
+        }
+
         return { success: true, plan: validation.data };
       } catch (err: unknown) {
         const message = err instanceof DomainEngineError || err instanceof Error ? err.message : 'Unknown mutation error';
@@ -134,7 +216,7 @@ export function EventPlanProvider({
         return { success: false, error: message };
       }
     },
-    [plan]
+    [plan, revision, eventId]
   );
 
   /**
@@ -142,7 +224,7 @@ export function EventPlanProvider({
    * and optimistic concurrency verification against baseVersion.
    */
   const applyServerProposal = useCallback(
-    (newPlan: EventPlan, baseVersion: number): MutationResult => {
+    (newPlan: EventPlan, baseVersion: number, newRevision?: number): MutationResult => {
       // 1. Client-Side Boundary Validation: Never trust server responses implicitly
       const validation = EventPlanSchema.safeParse(newPlan);
       if (!validation.success) {
@@ -160,6 +242,11 @@ export function EventPlanProvider({
 
       // 3. Commit state atomically
       setPlan(validation.data);
+      if (newRevision !== undefined) {
+        setRevision(newRevision);
+      } else {
+        setRevision((prev) => prev + 1);
+      }
       setError(null);
       return { success: true, plan: validation.data };
     },
@@ -168,6 +255,7 @@ export function EventPlanProvider({
 
   const resetPlan = useCallback(() => {
     setPlan(initialPlan);
+    setRevision(1);
     setError(null);
     if (typeof window !== 'undefined' && persistToLocalStorage) {
       try {
@@ -178,9 +266,25 @@ export function EventPlanProvider({
     }
   }, [initialPlan, persistToLocalStorage]);
 
+  const signOut = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } catch {
+      // Ignore
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
+      }
+    }
+  }, []);
+
   const contextValue = useMemo(
     () => ({
       plan,
+      eventId,
+      revision,
+      userEmail,
       derivedMetrics,
       isSubmitting,
       error,
@@ -189,8 +293,22 @@ export function EventPlanProvider({
       dispatchMutation,
       applyServerProposal,
       resetPlan,
+      signOut,
     }),
-    [plan, derivedMetrics, isSubmitting, error, clearError, dispatchMutation, applyServerProposal, resetPlan]
+    [
+      plan,
+      eventId,
+      revision,
+      userEmail,
+      derivedMetrics,
+      isSubmitting,
+      error,
+      clearError,
+      dispatchMutation,
+      applyServerProposal,
+      resetPlan,
+      signOut,
+    ]
   );
 
   return <EventPlanContext.Provider value={contextValue}>{children}</EventPlanContext.Provider>;

@@ -13,7 +13,7 @@ import { Sparkles, DollarSign, Calendar, Users, MessageSquare, AlertCircle, X, R
 import { MOCK_EVENT_PLAN } from '@/lib/mock-data';
 
 function DashboardContent() {
-  const { plan, error, clearError, resetPlan } = useEventPlan();
+  const { plan, userEmail, signOut, error, clearError, resetPlan } = useEventPlan();
   const [activeTab, setActiveTab] = useState<'budget' | 'timeline' | 'vendors'>('budget');
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
 
@@ -37,6 +37,16 @@ function DashboardContent() {
           </div>
 
           <div className="flex items-center gap-2">
+            {userEmail && (
+              <span className="text-xs text-muted-foreground hidden md:inline-block px-1">
+                {userEmail}
+              </span>
+            )}
+
+            <Badge variant="outline" className="text-xs font-mono font-medium hidden sm:inline-flex">
+              Plan v{plan.version} • Canonical
+            </Badge>
+
             <Button
               variant="ghost"
               size="sm"
@@ -48,9 +58,17 @@ function DashboardContent() {
               <span className="hidden md:inline">Reset</span>
             </Button>
 
-            <Badge variant="outline" className="text-xs font-mono font-medium hidden sm:inline-flex">
-              Plan v{plan.version} • Canonical
-            </Badge>
+            {userEmail && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={signOut}
+                className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer inline-flex items-center gap-1"
+                title="Sign out of your account"
+              >
+                <span className="hidden sm:inline">Sign Out</span>
+              </Button>
+            )}
 
             {/* Mobile Chat Toggle Button */}
             <button
