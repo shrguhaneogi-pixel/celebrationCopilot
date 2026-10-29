@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import {
   BudgetItemStatusSchema,
+  CalendarDateSchema,
   MilestoneCategorySchema,
   VendorPrioritySchema,
   VendorStatusSchema,
@@ -11,7 +12,7 @@ export const SetDetailsMutationSchema = z
     type: z.literal('SET_DETAILS'),
     title: z.string().min(1).max(150).optional(),
     eventType: z.string().min(1).max(100).optional(),
-    eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    eventDate: CalendarDateSchema.nullable().optional(),
     timezone: z.string().min(1).max(50).optional(),
     location: z.string().max(200).optional(),
   })

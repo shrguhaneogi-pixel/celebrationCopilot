@@ -126,6 +126,33 @@ describe('POST /api/planner Route Handler', () => {
     expect(data.originalPlan.guestCount).toBe(100);
   });
 
+  it('returns 422 when AI proposes an invalid calendar date in SET_DETAILS', async () => {
+    vi.spyOn(provider, 'generatePlannerProposal').mockResolvedValueOnce({
+      summary: 'Reschedule to invalid date',
+      operations: [
+        {
+          type: 'SET_DETAILS',
+          eventDate: '2026-13-45',
+        },
+      ],
+    });
+
+    const req = new NextRequest('http://localhost:3000/api/planner', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: 'Reschedule celebration',
+        currentPlan: basePlan,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(422);
+    const data = await res.json();
+    expect(data.success).toBe(false);
+    expect(data.error).toContain('AI proposed invalid schema');
+  });
+
   it('returns 429 when AI provider encounters rate limits', async () => {
     vi.spyOn(provider, 'generatePlannerProposal').mockRejectedValueOnce(
       new provider.AIProviderError('Rate limit exceeded', 429, true)

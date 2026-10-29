@@ -1,4 +1,4 @@
-import { EventPlan, EventPlanSchema, DerivedEventMetrics } from './event-plan.schema';
+import { EventPlan, EventPlanSchema, DerivedEventMetrics, isValidCalendarDate } from './event-plan.schema';
 import { Proposal, ProposalSchema, PlanMutation } from './proposal.schema';
 
 export class DomainEngineError extends Error {
@@ -78,7 +78,7 @@ export function calculateTotals(plan: EventPlan): DerivedEventMetrics {
  * Ensures zero daylight-savings or local timezone drift.
  */
 export function computeDueDate(eventDate: string | null, offsetDays: number): string | null {
-  if (!eventDate) return null;
+  if (!eventDate || !Number.isInteger(offsetDays) || !isValidCalendarDate(eventDate)) return null;
 
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(eventDate);
   if (!match) return null;
@@ -89,7 +89,9 @@ export function computeDueDate(eventDate: string | null, offsetDays: number): st
 
   // UTC Date Arithmetic
   const utcDate = new Date(Date.UTC(year, month - 1, day + offsetDays));
-  const resYear = utcDate.getUTCFullYear();
+  if (isNaN(utcDate.getTime())) return null;
+
+  const resYear = String(utcDate.getUTCFullYear()).padStart(4, '0');
   const resMonth = String(utcDate.getUTCMonth() + 1).padStart(2, '0');
   const resDay = String(utcDate.getUTCDate()).padStart(2, '0');
 

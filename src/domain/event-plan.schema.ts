@@ -1,5 +1,30 @@
 import { z } from 'zod';
 
+export function isValidCalendarDate(dateStr: string): boolean {
+  if (typeof dateStr !== 'string') return false;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!match) return false;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  if (year < 2000 || year > 2100) return false;
+  if (month < 1 || month > 12) return false;
+  if (day < 1 || day > 31) return false;
+  const d = new Date(Date.UTC(year, month - 1, day));
+  return (
+    d.getUTCFullYear() === year &&
+    d.getUTCMonth() === month - 1 &&
+    d.getUTCDate() === day
+  );
+}
+
+export const CalendarDateSchema = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format')
+  .refine(isValidCalendarDate, {
+    message: 'Must be a valid real-world calendar date (YYYY-MM-DD)',
+  });
+
 export const BudgetItemStatusSchema = z.enum(['projected', 'quoted', 'committed', 'paid']);
 export type BudgetItemStatus = z.infer<typeof BudgetItemStatusSchema>;
 
@@ -66,7 +91,7 @@ export const EventPlanSchema = z
     version: z.number().int().positive().default(1),
     title: z.string().min(1).max(150),
     eventType: z.string().min(1).max(100),
-    eventDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+    eventDate: CalendarDateSchema.nullable(),
     timezone: z.string().min(1).max(50).default('UTC'),
     location: z.string().max(200).default(''),
     guestCount: z.number().int().nonnegative().max(100000).default(0),

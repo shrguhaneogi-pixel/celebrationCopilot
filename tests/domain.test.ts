@@ -3,6 +3,8 @@ import {
   EventPlan,
   EventPlanSchema,
   BudgetItemSchema,
+  CalendarDateSchema,
+  isValidCalendarDate,
 } from '@/domain/event-plan.schema';
 import { Proposal, ProposalSchema } from '@/domain/proposal.schema';
 import {
@@ -105,13 +107,53 @@ describe('Canonical EventPlan Model & Zod Schemas', () => {
     ).toThrow();
   });
 
-  it('rejects malformed date formats in EventPlan', () => {
+  it('rejects malformed and non-existent date formats in EventPlan', () => {
     expect(() =>
       EventPlanSchema.parse({
         ...baseValidPlan,
         eventDate: '20-11-2026', // invalid, must be YYYY-MM-DD
       })
     ).toThrow();
+
+    expect(() =>
+      EventPlanSchema.parse({
+        ...baseValidPlan,
+        eventDate: '2026-02-30', // invalid calendar date
+      })
+    ).toThrow();
+
+    expect(() =>
+      EventPlanSchema.parse({
+        ...baseValidPlan,
+        eventDate: '1999-12-31', // out of supported range [2000, 2100]
+      })
+    ).toThrow();
+  });
+
+  it('validates calendar dates strictly via isValidCalendarDate and CalendarDateSchema', () => {
+    // Valid dates
+    expect(isValidCalendarDate('2026-11-20')).toBe(true);
+    expect(isValidCalendarDate('2024-02-29')).toBe(true); // leap year
+    expect(isValidCalendarDate('2028-02-29')).toBe(true); // leap year
+    expect(isValidCalendarDate('2000-02-29')).toBe(true); // century leap year
+    expect(CalendarDateSchema.safeParse('2026-11-20').success).toBe(true);
+
+    // Invalid dates
+    expect(isValidCalendarDate('2025-02-29')).toBe(false); // non-leap
+    expect(isValidCalendarDate('2100-02-29')).toBe(false); // century non-leap year (divisible by 100, not 400)
+    expect(isValidCalendarDate('2026-04-31')).toBe(false); // 30-day month
+    expect(isValidCalendarDate('2026-13-01')).toBe(false); // month > 12
+    expect(isValidCalendarDate('2026-00-10')).toBe(false); // month < 1
+    expect(isValidCalendarDate('2026-01-00')).toBe(false); // day < 1
+    expect(isValidCalendarDate('2026-01-32')).toBe(false); // day > 31
+    expect(isValidCalendarDate('1999-12-31')).toBe(false); // year < 2000
+    expect(isValidCalendarDate('2101-01-01')).toBe(false); // year > 2100
+    expect(isValidCalendarDate('not-a-date')).toBe(false);
+    expect(isValidCalendarDate(' 2026-11-20 ')).toBe(false); // whitespace
+    expect(CalendarDateSchema.safeParse('2025-02-29').success).toBe(false);
+    expect(CalendarDateSchema.safeParse('2028-02-29').success).toBe(true);
+    expect(CalendarDateSchema.safeParse('2100-02-29').success).toBe(false);
+    expect(CalendarDateSchema.safeParse('2026-13-45').success).toBe(false);
   });
 
   it('rejects non-integer monetary values in BudgetItem', () => {
