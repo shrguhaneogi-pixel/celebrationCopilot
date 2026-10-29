@@ -1,44 +1,104 @@
-import React, { useState } from 'react';
+'use client';
+
+import React, { useState, useRef, useEffect } from 'react';
 import { Card, CardHeader, CardTitle, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { MockChatMessage } from '@/lib/mock-data';
-import { EventPlan } from '@/domain/event-plan.schema';
+import { EventPlan, EventPlanSchema } from '@/domain/event-plan.schema';
 import { formatCurrency } from '@/lib/utils';
-import { Bot, Send, Sparkles, PlusCircle, Check, ArrowRight, ShieldAlert, Loader2 } from 'lucide-react';
+import { useEventPlan } from '@/context/EventPlanContext';
+import { Bot, Send, Sparkles, PlusCircle, Check, ArrowRight, ShieldAlert, Loader2, RotateCcw } from 'lucide-react';
 
 interface ChatSidebarProps {
   initialMessages?: MockChatMessage[];
-  currency: string;
-  currentPlan: EventPlan;
-  onApplyPlan: (newPlan: EventPlan) => void;
+  currency?: string;
+  currentPlan?: EventPlan;
+  onApplyPlan?: (newPlan: EventPlan) => void;
 }
 
-export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApplyPlan }: ChatSidebarProps) {
+export function ChatSidebar({
+  initialMessages = [],
+  currency: propCurrency,
+  currentPlan: propPlan,
+  onApplyPlan: propOnApplyPlan,
+}: ChatSidebarProps) {
+  let contextPlan: ReturnType<typeof useEventPlan>['plan'] | undefined;
+  let contextEventId: string | null | undefined;
+  let contextIsSubmitting: boolean = false;
+  let contextApplyServerProposal: ReturnType<typeof useEventPlan>['applyServerProposal'] | undefined;
+  let setIsSubmitting: ((s: boolean) => void) | undefined;
+
+  try {
+    const context = useEventPlan();
+    contextPlan = context.plan;
+    contextEventId = context.eventId;
+    contextIsSubmitting = context.isSubmitting;
+    contextApplyServerProposal = context.applyServerProposal;
+    setIsSubmitting = context.setIsSubmitting;
+  } catch {
+    // Fallback if rendered outside context
+  }
+
+  const activePlan = contextPlan || propPlan;
+  const currency = activePlan ? activePlan.currency : (propCurrency || 'INR');
+
   const [messages, setMessages] = useState<MockChatMessage[]>(initialMessages);
   const [inputVal, setInputVal] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [stagedPlan, setStagedPlan] = useState<EventPlan | null>(null);
+  const [stagedBaseVersion, setStagedBaseVersion] = useState<number | null>(null);
+  const [stagedRevision, setStagedRevision] = useState<number | null>(null);
   const [appliedProposal, setAppliedProposal] = useState(false);
   const [dismissedProposal, setDismissedProposal] = useState(false);
+  const [lastPrompt, setLastPrompt] = useState<string | null>(null);
+  const [liveAnnouncement, setLiveAnnouncement] = useState('');
+
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to latest message
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isLoading]);
 
   const handleApply = () => {
-    if (stagedPlan) {
-      onApplyPlan(stagedPlan);
+    if (!stagedPlan) return;
+
+    if (contextApplyServerProposal && stagedBaseVersion !== null) {
+      const res = contextApplyServerProposal(stagedPlan, stagedBaseVersion, stagedRevision ?? undefined);
+      if (res.success) {
+        setAppliedProposal(true);
+        setLiveAnnouncement('Proposal applied successfully to event plan.');
+      } else {
+        const errorMsg: MockChatMessage = {
+          id: `conflict-${Date.now()}`,
+          sender: 'assistant',
+          text: `⚠️ ${res.error || 'Failed to apply proposal due to state conflict.'}`,
+          timestamp: 'Just now',
+        };
+        setMessages((prev) => [...prev, errorMsg]);
+        setLiveAnnouncement(res.error || 'Conflict applying proposal.');
+      }
+    } else if (propOnApplyPlan) {
+      propOnApplyPlan(stagedPlan);
       setAppliedProposal(true);
+      setLiveAnnouncement('Proposal applied successfully to event plan.');
     }
   };
 
   const handleDismiss = () => {
     setDismissedProposal(true);
     setStagedPlan(null);
+    setStagedBaseVersion(null);
+    setStagedRevision(null);
+    setLiveAnnouncement('Proposal dismissed.');
   };
 
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const promptText = inputVal.trim();
-    if (!promptText || isLoading) return;
+  const executeSend = async (promptText: string) => {
+    if (!promptText.trim() || isLoading || contextIsSubmitting || !activePlan) return;
+
+    const baseVersion = activePlan.version;
+    setLastPrompt(promptText);
 
     const userMsg: MockChatMessage = {
       id: `msg-${Date.now()}`,
@@ -50,6 +110,8 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
     setMessages((prev) => [...prev, userMsg]);
     setInputVal('');
     setIsLoading(true);
+    if (setIsSubmitting) setIsSubmitting(true);
+    setLiveAnnouncement('Generating AI proposal...');
 
     try {
       const res = await fetch('/api/planner', {
@@ -57,13 +119,22 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: promptText,
-          currentPlan,
+          eventId: contextEventId || undefined,
+          currentPlan: activePlan,
         }),
       });
 
       const data = await res.json();
 
-      if (data.success && data.proposal) {
+      if (data.success && data.proposal && data.plan) {
+        // Client-side validation boundary: never trust server response blindly
+        const planValidation = EventPlanSchema.safeParse(data.plan);
+        if (!planValidation.success) {
+          throw new Error(`Client rejected invalid plan response: ${planValidation.error.message}`);
+        }
+
+        setStagedRevision(data.revision || null);
+
         let costDelta = 0;
         const mutationsList: string[] = [];
 
@@ -96,7 +167,8 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
           }
         }
 
-        setStagedPlan(data.plan);
+        setStagedPlan(planValidation.data);
+        setStagedBaseVersion(baseVersion);
         setAppliedProposal(false);
         setDismissedProposal(false);
 
@@ -113,6 +185,7 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
         };
 
         setMessages((prev) => [...prev, replyMsg]);
+        setLiveAnnouncement(`Proposal ready for review: ${data.proposal.summary}`);
       } else {
         const errorReply: MockChatMessage = {
           id: `reply-${Date.now()}`,
@@ -121,18 +194,33 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
           timestamp: 'Just now',
         };
         setMessages((prev) => [...prev, errorReply]);
+        setLiveAnnouncement(`Error: ${data.error || 'Failed to generate proposal'}`);
       }
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : 'Network request failed';
       const errorReply: MockChatMessage = {
         id: `reply-${Date.now()}`,
         sender: 'assistant',
-        text: `⚠️ Network error: ${errorMsg}. Your plan was preserved.`,
+        text: `⚠️ ${errorMsg}. Your plan was preserved.`,
         timestamp: 'Just now',
       };
       setMessages((prev) => [...prev, errorReply]);
+      setLiveAnnouncement(`Error: ${errorMsg}`);
     } finally {
       setIsLoading(false);
+      if (setIsSubmitting) setIsSubmitting(false);
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    executeSend(inputVal);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      executeSend(inputVal);
     }
   };
 
@@ -140,8 +228,21 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
     setInputVal(prompt);
   };
 
+  const handleRetryLast = () => {
+    if (lastPrompt) {
+      executeSend(lastPrompt);
+    }
+  };
+
+  const isLocked = isLoading || contextIsSubmitting;
+
   return (
     <Card className="shadow-sm border-border flex flex-col h-full min-h-[580px] bg-card">
+      {/* Accessible Live Region */}
+      <div aria-live="polite" aria-atomic="true" className="sr-only">
+        {liveAnnouncement}
+      </div>
+
       {/* Header */}
       <CardHeader className="border-b border-border p-4">
         <div className="flex items-center justify-between">
@@ -167,6 +268,7 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
       <CardContent className="flex-1 overflow-y-auto p-4 space-y-3.5 text-xs">
         {messages.map((msg) => {
           const isUser = msg.sender === 'user';
+          const isErrorMsg = msg.text.startsWith('⚠️');
 
           return (
             <div key={msg.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'}`}>
@@ -174,17 +276,37 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
                 className={`max-w-[85%] rounded-xl px-3.5 py-2.5 shadow-xs ${
                   isUser
                     ? 'bg-primary text-primary-foreground rounded-tr-none'
+                    : isErrorMsg
+                    ? 'bg-destructive/10 border border-destructive/30 text-destructive rounded-tl-none'
                     : 'bg-muted/50 border border-border text-foreground rounded-tl-none'
                 }`}
               >
                 <p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
                 <span
                   className={`text-[10px] mt-1 block ${
-                    isUser ? 'text-primary-foreground/75' : 'text-muted-foreground'
+                    isUser
+                      ? 'text-primary-foreground/75'
+                      : isErrorMsg
+                      ? 'text-destructive/80'
+                      : 'text-muted-foreground'
                   }`}
                 >
                   {msg.timestamp}
                 </span>
+
+                {isErrorMsg && lastPrompt && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={handleRetryLast}
+                    disabled={isLocked}
+                    aria-label="Retry message"
+                    className="mt-1 h-6 px-2 text-[10px] text-destructive hover:bg-destructive/20 cursor-pointer inline-flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    Retry
+                  </Button>
+                )}
               </div>
 
               {/* Proposal Diff Card */}
@@ -223,6 +345,7 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
                     <div className="flex gap-2 pt-1 border-t border-border/60">
                       <Button
                         size="sm"
+                        disabled={isLocked}
                         className="flex-1 text-xs h-7 cursor-pointer"
                         onClick={handleApply}
                       >
@@ -231,6 +354,7 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={isLocked}
                         className="text-xs h-7 cursor-pointer"
                         onClick={handleDismiss}
                       >
@@ -240,7 +364,7 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
                   )}
 
                   <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                    <ShieldAlert className="w-3 h-3 text-muted-foreground" />
+                    <ShieldAlert className="w-3 h-3 text-muted-foreground shrink-0" />
                     Untrusted proposal: state is untouched until you click Apply.
                   </p>
                 </div>
@@ -255,30 +379,35 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
             <span>AI generating structured proposal...</span>
           </div>
         )}
+
+        <div ref={messagesEndRef} />
       </CardContent>
 
       {/* Quick Suggestion Chips */}
       <div className="px-4 py-2 bg-muted/30 border-t border-border flex flex-wrap gap-1.5">
         <button
           type="button"
+          disabled={isLocked}
           onClick={() => handleChipClick('Increase guests to 200')}
-          className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1"
+          className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
         >
           <PlusCircle className="w-3 h-3 text-primary" />
           200 Guests
         </button>
         <button
           type="button"
+          disabled={isLocked}
           onClick={() => handleChipClick('Add live dhol players and DJ for ₹45,000')}
-          className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1"
+          className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
         >
           <PlusCircle className="w-3 h-3 text-primary" />
           Add DJ (₹45,000)
         </button>
         <button
           type="button"
+          disabled={isLocked}
           onClick={() => handleChipClick('Increase budget cap to ₹30,00,000')}
-          className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1"
+          className="text-[11px] bg-card hover:bg-muted text-foreground border border-border px-2 py-0.5 rounded-md transition-colors cursor-pointer inline-flex items-center gap-1 disabled:opacity-50"
         >
           <PlusCircle className="w-3 h-3 text-primary" />
           Expand Budget
@@ -287,16 +416,25 @@ export function ChatSidebar({ initialMessages = [], currency, currentPlan, onApp
 
       {/* Input Composer */}
       <CardFooter className="p-3 border-t border-border">
-        <form onSubmit={handleSend} className="w-full space-y-1.5">
+        <form onSubmit={handleFormSubmit} className="w-full space-y-1.5">
           <div className="flex gap-2">
-            <Input
+            <textarea
+              rows={1}
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              placeholder="e.g. Increase guests to 200 or add a florist..."
-              disabled={isLoading}
-              className="text-xs h-9 bg-background"
+              onKeyDown={handleKeyDown}
+              placeholder="Suggest an event change (Enter to send, Shift+Enter for newline)..."
+              disabled={isLocked}
+              aria-label="Planning Copilot chat input"
+              className="text-xs w-full resize-none p-2 rounded-md border border-border bg-background text-foreground focus:outline-hidden focus:ring-1 focus:ring-primary disabled:opacity-50 leading-relaxed max-h-24"
             />
-            <Button type="submit" size="sm" disabled={isLoading || !inputVal.trim()} className="h-9 px-3 cursor-pointer">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isLocked || !inputVal.trim()}
+              className="h-auto px-3 cursor-pointer self-end"
+              aria-label="Send message"
+            >
               {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
             </Button>
           </div>
