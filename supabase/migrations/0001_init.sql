@@ -49,6 +49,30 @@ TO authenticated
 USING (auth.uid() = user_id);
 
 -- 8. Atomic Concurrency Update Function (Compare-and-Swap)
+-- Primary signature: update_event_plan(p_event_id, p_plan, p_expected_version)
+CREATE OR REPLACE FUNCTION update_event_plan(
+  p_event_id UUID,
+  p_plan JSONB,
+  p_expected_version INT
+)
+RETURNS SETOF public.events
+LANGUAGE plpgsql
+SECURITY INVOKER
+AS $$
+BEGIN
+  RETURN QUERY
+  UPDATE public.events
+  SET plan = p_plan,
+      revision = revision + 1,
+      updated_at = timezone('utc'::text, now())
+  WHERE id = p_event_id
+    AND user_id = auth.uid()
+    AND revision = p_expected_version
+  RETURNING *;
+END;
+$$;
+
+-- Backward-compatible overload: update_event_plan(p_event_id, p_expected_revision, p_new_plan)
 CREATE OR REPLACE FUNCTION update_event_plan(
   p_event_id UUID,
   p_expected_revision INT,

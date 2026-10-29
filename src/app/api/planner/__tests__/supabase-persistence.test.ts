@@ -7,12 +7,12 @@ import * as eventsDb from '@/lib/supabase/events';
 import * as provider from '@/lib/ai/provider';
 
 describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () => {
-  const mockUserId = 'user-uuid-1111-aaaa';
-  const otherUserId = 'user-uuid-2222-bbbb';
+  const mockUserId = '11111111-1111-4111-a111-111111111111';
+  const otherUserId = '22222222-2222-4222-a222-222222222222';
   const mockEventId = '123e4567-e89b-12d3-a456-426614174000';
 
   const authoritativeDbPlan: EventPlan = {
-    id: 'db-event-plan-1',
+    id: mockEventId,
     version: 1,
     title: 'Authentic DB Wedding',
     eventType: 'Wedding',
@@ -162,23 +162,17 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
     expect(eventsDb.getAuthoritativeEvent).toHaveBeenCalledWith(mockEventId, otherUserId);
   });
 
-  it('detects a revision race and reports conflict when atomic compare-and-swap encounters stale revision', async () => {
+  it('detects a revision race and reports conflict when atomic compare-and-swap encounters stale revision via RPC', async () => {
     const mockSupabase = {
-      from: vi.fn().mockReturnValue({
-        update: vi.fn().mockReturnValue({
-          eq: vi.fn().mockReturnValue({
-            eq: vi.fn().mockReturnValue({
-              eq: vi.fn().mockReturnValue({
-                select: vi.fn().mockReturnValue({
-                  maybeSingle: vi.fn().mockResolvedValueOnce({
-                    data: null, // CAS failed: 0 rows updated
-                    error: null,
-                  }),
-                }),
-              }),
-            }),
-          }),
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: mockUserId } },
+          error: null,
         }),
+      },
+      rpc: vi.fn().mockResolvedValueOnce({
+        data: null, // CAS failed: 0 rows updated
+        error: null,
       }),
     };
 
@@ -195,7 +189,148 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
 
     expect(result.success).toBe(false);
     expect(result.conflict).toBe(true);
-    expect(result.error).toContain('Conflict: Event was updated by another request');
+    expect(result.code).toBe('CAS_MISMATCH');
+    expect(result.error).toBe('CAS_MISMATCH: The event was modified concurrently. Please refresh.');
+    expect(mockSupabase.rpc).toHaveBeenCalledWith('update_event_plan', {
+      p_event_id: mockEventId,
+      p_plan: expect.objectContaining({ version: 2 }),
+      p_expected_version: 1,
+    });
+  });
+
+  it('successfully updates event via update_event_plan RPC when authenticated and version matches', async () => {
+    const updatedPlan: EventPlan = {
+      ...authoritativeDbPlan,
+      version: 2,
+    };
+    const mockSupabase = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: mockUserId } },
+          error: null,
+        }),
+      },
+      rpc: vi.fn().mockResolvedValueOnce({
+        data: [
+          {
+            id: mockEventId,
+            user_id: mockUserId,
+            title: updatedPlan.title,
+            event_date: updatedPlan.eventDate,
+            budget_limit: updatedPlan.totalCap,
+            plan: updatedPlan,
+            version: 2,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ],
+        error: null,
+      }),
+    };
+
+    vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+      mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+    );
+
+    const result = await eventsDb.persistEventAtomic(
+      mockEventId,
+      mockUserId,
+      1,
+      authoritativeDbPlan
+    );
+
+    expect(result.success).toBe(true);
+    expect(result.record?.id).toBe(mockEventId);
+    expect(result.record?.version).toBe(2);
+    expect(result.record?.plan.version).toBe(2);
+    expect(mockSupabase.rpc).toHaveBeenCalledWith('update_event_plan', {
+      p_event_id: mockEventId,
+      p_plan: expect.objectContaining({ version: 2 }),
+      p_expected_version: 1,
+    });
+  });
+
+  it('rejects update when caller has no authenticated Supabase session', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: null },
+          error: { message: 'Session expired' },
+        }),
+      },
+      rpc: vi.fn(),
+    };
+
+    vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+      mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+    );
+
+    const result = await eventsDb.persistEventAtomic(
+      mockEventId,
+      mockUserId,
+      1,
+      authoritativeDbPlan
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toBe('Unauthorized: authenticated session required');
+    expect(mockSupabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it('rejects update when client-provided userId does not match session auth.uid()', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: mockUserId } },
+          error: null,
+        }),
+      },
+      rpc: vi.fn(),
+    };
+
+    vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+      mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+    );
+
+    const result = await eventsDb.persistEventAtomic(
+      mockEventId,
+      otherUserId,
+      1,
+      authoritativeDbPlan
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Unauthorized: user ID mismatch with authenticated session');
+    expect(mockSupabase.rpc).not.toHaveBeenCalled();
+  });
+
+  it('safely handles corrupted database returns without blind type casting or unhandled exceptions', async () => {
+    const mockSupabase = {
+      auth: {
+        getUser: vi.fn().mockResolvedValue({
+          data: { user: { id: mockUserId } },
+          error: null,
+        }),
+      },
+      rpc: vi.fn().mockResolvedValueOnce({
+        data: [{ id: 'not-a-valid-uuid', corrupted: true }],
+        error: null,
+      }),
+    };
+
+    vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+      mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+    );
+
+    const result = await eventsDb.persistEventAtomic(
+      mockEventId,
+      mockUserId,
+      1,
+      authoritativeDbPlan
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Database payload corrupted');
   });
 
   it('preserves database state without writing when AI proposal violates domain invariants', async () => {
@@ -247,5 +382,221 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
 
     // Invariant: persistEventAtomic must NOT be called on invariant failure!
     expect(persistSpy).not.toHaveBeenCalled();
+  });
+
+  describe('getEventById helper', () => {
+    it('returns event record when authenticated owner requests it', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: mockUserId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValueOnce({
+                  data: {
+                    id: mockEventId,
+                    user_id: mockUserId,
+                    plan: authoritativeDbPlan,
+                    revision: 1,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+
+      vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+        mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+      );
+
+      const record = await eventsDb.getEventById(mockEventId, mockUserId);
+      expect(record).not.toBeNull();
+      expect(record?.id).toBe(mockEventId);
+      expect(record?.user_id).toBe(mockUserId);
+    });
+
+    it('returns null when caller is unauthenticated or user ID mismatches', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: null },
+            error: { message: 'No auth session' },
+          }),
+        },
+      };
+
+      vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+        mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+      );
+
+      const record = await eventsDb.getEventById(mockEventId);
+      expect(record).toBeNull();
+    });
+
+    it('throws descriptive error when database returns corrupted payload in getEventById', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: mockUserId } },
+            error: null,
+          }),
+        },
+        from: vi.fn().mockReturnValue({
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                maybeSingle: vi.fn().mockResolvedValueOnce({
+                  data: {
+                    id: 'not-a-uuid',
+                    user_id: mockUserId,
+                    plan: { corrupted: true },
+                    revision: 1,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  },
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        }),
+      };
+
+      vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+        mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+      );
+
+      await expect(eventsDb.getEventById(mockEventId, mockUserId)).rejects.toThrow(
+        /Database corrupted/
+      );
+    });
+  });
+
+  describe('persistEventAtomic API & Schema Rigor', () => {
+    it('supports 2-argument signature persistEventAtomic(plan, expectedVersion)', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: mockUserId } },
+            error: null,
+          }),
+        },
+        rpc: vi.fn().mockResolvedValueOnce({
+          data: [
+            {
+              id: mockEventId,
+              user_id: mockUserId,
+              title: authoritativeDbPlan.title,
+              event_date: authoritativeDbPlan.eventDate,
+              budget_limit: authoritativeDbPlan.totalCap,
+              plan: { ...authoritativeDbPlan, version: 2 },
+              version: 2,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          error: null,
+        }),
+      };
+
+      vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+        mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+      );
+
+      const result = await eventsDb.persistEventAtomic(authoritativeDbPlan, 1);
+
+      expect(result.success).toBe(true);
+      expect(result.record?.id).toBe(mockEventId);
+      expect(result.record?.version).toBe(2);
+      expect(mockSupabase.rpc).toHaveBeenCalledWith('update_event_plan', {
+        p_event_id: mockEventId,
+        p_plan: expect.objectContaining({ version: 2 }),
+        p_expected_version: 1,
+      });
+    });
+
+    it('returns structured CAS_MISMATCH when RPC returns explicit version mismatch error object', async () => {
+      const mockSupabase = {
+        auth: {
+          getUser: vi.fn().mockResolvedValue({
+            data: { user: { id: mockUserId } },
+            error: null,
+          }),
+        },
+        rpc: vi.fn().mockResolvedValueOnce({
+          data: null,
+          error: {
+            message: 'concurrency conflict: expected version 1 does not match stored revision',
+            code: 'CAS_MISMATCH',
+          },
+        }),
+      };
+
+      vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+        mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+      );
+
+      const result = await eventsDb.persistEventAtomic(
+        mockEventId,
+        mockUserId,
+        1,
+        authoritativeDbPlan
+      );
+
+      expect(result.success).toBe(false);
+      expect(result.conflict).toBe(true);
+      expect(result.code).toBe('CAS_MISMATCH');
+      expect(result.error).toBe('CAS_MISMATCH: The event was modified concurrently. Please refresh.');
+    });
+
+    it('strictly validates PersistedEventRecordSchema and rejects malformed fields', () => {
+      const validRecord = {
+        id: mockEventId,
+        user_id: mockUserId,
+        title: 'Authentic DB Wedding',
+        event_date: '2026-12-15',
+        budget_limit: 1500000,
+        plan: authoritativeDbPlan,
+        version: 1,
+        created_at: '2026-10-29T10:00:00.000Z',
+        updated_at: '2026-10-29T10:00:00.000Z',
+      };
+
+      const validResult = eventsDb.PersistedEventRecordSchema.safeParse(validRecord);
+      expect(validResult.success).toBe(true);
+
+      // Rejects non-UUID id
+      expect(
+        eventsDb.PersistedEventRecordSchema.safeParse({
+          ...validRecord,
+          id: 'invalid-not-uuid',
+        }).success
+      ).toBe(false);
+
+      // Rejects non-integer budget_limit
+      expect(
+        eventsDb.PersistedEventRecordSchema.safeParse({
+          ...validRecord,
+          budget_limit: 1500.5,
+        }).success
+      ).toBe(false);
+
+      // Rejects non-positive version
+      expect(
+        eventsDb.PersistedEventRecordSchema.safeParse({
+          ...validRecord,
+          version: 0,
+        }).success
+      ).toBe(false);
+    });
   });
 });

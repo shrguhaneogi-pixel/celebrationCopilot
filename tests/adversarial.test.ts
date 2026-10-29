@@ -6,12 +6,19 @@ import { checkRateLimit, resetRateLimit } from '@/lib/rate-limiter';
 import { persistEventAtomic } from '@/lib/supabase/events';
 
 // Top-level mock for Supabase server client
+const mockRpc = vi.fn();
+const mockGetUser = vi.fn();
 const mockUpdate = vi.fn();
+
 vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn().mockImplementation(() => Promise.resolve({
+    auth: {
+      getUser: mockGetUser,
+    },
     from: () => ({
       update: mockUpdate,
     }),
+    rpc: mockRpc,
   })),
 }));
 
@@ -61,9 +68,18 @@ describe('Adversarial Red Team Audit: Breaking Domain, AI, and Security Boundari
     updatedAt: '2026-10-29T10:00:00.000Z',
   };
 
+  const mockTenantUserId = '11111111-1111-4111-a111-111111111111';
+  const maliciousAttackerId = '22222222-2222-4222-a222-222222222222';
+  const mockEventUuid = '123e4567-e89b-12d3-a456-426614174000';
+
   beforeEach(() => {
     vi.restoreAllMocks();
     resetRateLimit();
+    mockGetUser.mockResolvedValue({
+      data: { user: { id: mockTenantUserId } },
+      error: null,
+    });
+    mockRpc.mockResolvedValue({ data: null, error: null });
     mockUpdate.mockReturnValue({
       eq: () => ({
         eq: () => ({
@@ -308,16 +324,84 @@ describe('Adversarial Red Team Audit: Breaking Domain, AI, and Security Boundari
   // =========================================================================
   describe('Supabase Multi-Tenant RLS & CAS Concurrency Simulation', () => {
     it('detects concurrency conflict when expectedRevision does not match current state', async () => {
-      const res = await persistEventAtomic('event-uuid-1', 'user-uuid-1', 1, basePlan);
+      mockRpc.mockResolvedValueOnce({ data: null, error: null });
+      const res = await persistEventAtomic(mockEventUuid, mockTenantUserId, 1, {
+        ...basePlan,
+        id: mockEventUuid,
+      });
       expect(res.success).toBe(false);
       expect(res.conflict).toBe(true);
-      expect(res.error).toContain('Conflict');
+      expect(res.code).toBe('CAS_MISMATCH');
+      expect(res.error).toBe('CAS_MISMATCH: The event was modified concurrently. Please refresh.');
+      expect(mockRpc).toHaveBeenCalledWith('update_event_plan', expect.objectContaining({
+        p_event_id: mockEventUuid,
+        p_expected_version: 1,
+      }));
     });
 
-    it('strictly isolates tenant access: update with wrong userId yields conflict/not found', async () => {
-      const res = await persistEventAtomic('event-belonging-to-alice', 'malicious-bob-user-id', 1, basePlan);
+    it('strictly isolates tenant access: update with wrong userId is rejected without concurrency conflict', async () => {
+      const res = await persistEventAtomic(mockEventUuid, maliciousAttackerId, 1, {
+        ...basePlan,
+        id: mockEventUuid,
+      });
       expect(res.success).toBe(false);
-      expect(res.conflict).toBe(true);
+      expect(res.conflict).toBeFalsy();
+      expect(res.error).toContain('Unauthorized: user ID mismatch with authenticated session');
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('rejects unauthenticated caller when server session is missing', async () => {
+      mockGetUser.mockResolvedValueOnce({
+        data: { user: null },
+        error: { message: 'No session' },
+      });
+      const res = await persistEventAtomic(mockEventUuid, mockTenantUserId, 1, {
+        ...basePlan,
+        id: mockEventUuid,
+      });
+      expect(res.success).toBe(false);
+      expect(res.error).toBe('Unauthorized: authenticated session required');
+      expect(mockRpc).not.toHaveBeenCalled();
+    });
+
+    it('safely handles corrupted database payloads without throwing unhandled exceptions', async () => {
+      mockRpc.mockResolvedValueOnce({
+        data: [{ id: 'not-a-valid-uuid', corrupted: true }],
+        error: null,
+      });
+      const res = await persistEventAtomic(mockEventUuid, mockTenantUserId, 1, {
+        ...basePlan,
+        id: mockEventUuid,
+      });
+      expect(res.success).toBe(false);
+      expect(res.error).toContain('Database payload corrupted');
+    });
+
+    it('successfully persists event when session and version are valid (happy path)', async () => {
+      const validPlan = { ...basePlan, id: mockEventUuid, version: 2 };
+      mockRpc.mockResolvedValueOnce({
+        data: [
+          {
+            id: mockEventUuid,
+            user_id: mockTenantUserId,
+            title: validPlan.title,
+            event_date: validPlan.eventDate,
+            budget_limit: validPlan.totalCap,
+            plan: validPlan,
+            version: 2,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          },
+        ],
+        error: null,
+      });
+      const res = await persistEventAtomic(mockEventUuid, mockTenantUserId, 1, {
+        ...basePlan,
+        id: mockEventUuid,
+      });
+      expect(res.success).toBe(true);
+      expect(res.record?.id).toBe(mockEventUuid);
+      expect(res.record?.version).toBe(2);
     });
   });
 });
