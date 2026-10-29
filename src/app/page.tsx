@@ -1,40 +1,21 @@
 'use client';
 
 import React, { useState } from 'react';
-import { MOCK_EVENT_PLAN } from '@/lib/mock-data';
-import { EventPlan } from '@/domain/event-plan.schema';
+import { EventPlanProvider, useEventPlan } from '@/context/EventPlanContext';
 import { EventHeader } from '@/components/dashboard/EventHeader';
 import { BudgetTracker } from '@/components/dashboard/BudgetTracker';
 import { TimelineTracker } from '@/components/dashboard/TimelineTracker';
 import { VendorTracker } from '@/components/dashboard/VendorTracker';
 import { ChatSidebar } from '@/components/dashboard/ChatSidebar';
 import { Badge } from '@/components/ui/badge';
-import { Sparkles, DollarSign, Calendar, Users, MessageSquare } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Sparkles, DollarSign, Calendar, Users, MessageSquare, AlertCircle, X, RotateCcw } from 'lucide-react';
+import { MOCK_EVENT_PLAN } from '@/lib/mock-data';
 
-const INITIAL_PLAN: EventPlan = {
-  id: MOCK_EVENT_PLAN.id,
-  version: 1,
-  title: MOCK_EVENT_PLAN.title,
-  eventType: MOCK_EVENT_PLAN.eventType,
-  eventDate: MOCK_EVENT_PLAN.eventDate,
-  timezone: 'Asia/Kolkata',
-  location: MOCK_EVENT_PLAN.venue,
-  guestCount: MOCK_EVENT_PLAN.guestCount,
-  currency: MOCK_EVENT_PLAN.currency,
-  totalCap: MOCK_EVENT_PLAN.totalCap,
-  items: MOCK_EVENT_PLAN.items,
-  milestones: MOCK_EVENT_PLAN.milestones,
-  vendors: MOCK_EVENT_PLAN.vendors,
-};
-
-export default function DashboardPage() {
-  const [plan, setPlan] = useState<EventPlan>(INITIAL_PLAN);
+function DashboardContent() {
+  const { plan, userEmail, signOut, error, clearError, resetPlan } = useEventPlan();
   const [activeTab, setActiveTab] = useState<'budget' | 'timeline' | 'vendors'>('budget');
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
-
-  const handleApplyPlan = (newPlan: EventPlan) => {
-    setPlan(newPlan);
-  };
 
   return (
     <div className="min-h-screen bg-background text-foreground antialiased flex flex-col">
@@ -56,9 +37,38 @@ export default function DashboardPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-xs font-medium hidden sm:inline-flex">
-              Plan v{plan.version} • Reactive
+            {userEmail && (
+              <span className="text-xs text-muted-foreground hidden md:inline-block px-1">
+                {userEmail}
+              </span>
+            )}
+
+            <Badge variant="outline" className="text-xs font-mono font-medium hidden sm:inline-flex">
+              Plan v{plan.version} • Canonical
             </Badge>
+
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={resetPlan}
+              className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer inline-flex items-center gap-1"
+              title="Reset plan to initial state"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span className="hidden md:inline">Reset</span>
+            </Button>
+
+            {userEmail && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={signOut}
+                className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer inline-flex items-center gap-1"
+                title="Sign out of your account"
+              >
+                <span className="hidden sm:inline">Sign Out</span>
+              </Button>
+            )}
 
             {/* Mobile Chat Toggle Button */}
             <button
@@ -73,10 +83,28 @@ export default function DashboardPage() {
         </div>
       </header>
 
+      {/* Global Invariant Error Banner */}
+      {error && (
+        <div role="alert" className="bg-destructive/10 border-b border-destructive/20 text-destructive text-xs py-2 px-4 flex items-center justify-between max-w-7xl mx-auto w-full">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <button
+            type="button"
+            onClick={clearError}
+            className="text-destructive hover:opacity-80 p-1 cursor-pointer"
+            aria-label="Dismiss error notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Main Container */}
       <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
         {/* Hero Event Overview Header */}
-        <EventHeader plan={plan} />
+        <EventHeader />
 
         {/* Dashboard Content Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -125,45 +153,32 @@ export default function DashboardPage() {
             </nav>
 
             {/* Active Tab View */}
-            {activeTab === 'budget' && (
-              <BudgetTracker
-                items={plan.items}
-                totalCap={plan.totalCap}
-                currency={plan.currency}
-              />
-            )}
-
-            {activeTab === 'timeline' && (
-              <TimelineTracker
-                milestones={plan.milestones}
-                eventDate={plan.eventDate}
-              />
-            )}
-
-            {activeTab === 'vendors' && (
-              <VendorTracker vendors={plan.vendors} />
-            )}
+            {activeTab === 'budget' && <BudgetTracker />}
+            {activeTab === 'timeline' && <TimelineTracker />}
+            {activeTab === 'vendors' && <VendorTracker />}
           </main>
 
           {/* Conversational Copilot Sidebar (4 columns) */}
           <aside className={`lg:col-span-4 sticky top-20 ${mobileChatOpen ? 'block' : 'hidden lg:block'}`}>
-            <ChatSidebar
-              initialMessages={MOCK_EVENT_PLAN.chatHistory}
-              currency={plan.currency}
-              currentPlan={plan}
-              onApplyPlan={handleApplyPlan}
-            />
+            <ChatSidebar initialMessages={MOCK_EVENT_PLAN.chatHistory} />
           </aside>
-
         </div>
       </div>
 
       {/* Footer */}
       <footer className="border-t border-border mt-auto py-4 text-center text-xs text-muted-foreground">
         <p>
-          Celebration Copilot • Deterministic Reactive State Engine • Vercel AI SDK Integration
+          Celebration Copilot • Deterministic Reactive State Engine • One Canonical EventPlan
         </p>
       </footer>
     </div>
+  );
+}
+
+export default function DashboardPage() {
+  return (
+    <EventPlanProvider>
+      <DashboardContent />
+    </EventPlanProvider>
   );
 }
