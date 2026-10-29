@@ -52,3 +52,9 @@ body {
   color: hsl(var(--foreground));
   font-feature-settings: "rlig" 1, "calt" 1;
 }
+
+@layer base {
+  *, ::before, ::after {
+    border-color: hsl(var(--border));
+  }
+}
