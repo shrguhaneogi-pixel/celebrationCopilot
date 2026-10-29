@@ -57,6 +57,8 @@ export const VendorTaskSchema = z
   })
   .strict();
 export type VendorTask = z.infer<typeof VendorTaskSchema>;
+export const VendorItemSchema = VendorTaskSchema;
+export type VendorItem = VendorTask;
 
 export const EventPlanSchema = z
   .object({

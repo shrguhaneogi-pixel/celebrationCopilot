@@ -7,13 +7,12 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { formatCurrency } from '@/lib/utils';
-import { MockEventPlan } from '@/lib/mock-data';
 import { EventPlan } from '@/domain/event-plan.schema';
 import { PlanMutation } from '@/domain/proposal.schema';
 import { useEventPlan } from '@/context/EventPlanContext';
 
 interface EventHeaderProps {
-  plan?: (EventPlan | MockEventPlan) & { venue?: string };
+  plan?: EventPlan;
 }
 
 export function EventHeader({ plan: propPlan }: EventHeaderProps) {
@@ -41,7 +40,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
   const [editGuests, setEditGuests] = useState(String(activePlan?.guestCount ?? ''));
   const [editCap, setEditCap] = useState(String(activePlan?.totalCap ?? ''));
   const [editLocation, setEditLocation] = useState(
-    activePlan ? ('location' in activePlan ? (activePlan.location as string) : (activePlan.venue || 'Location TBD')) : ''
+    activePlan ? (activePlan.location || '') : ''
   );
   const [editError, setEditError] = useState<string | null>(null);
 
@@ -62,13 +61,13 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
 
   const isOverBudget = contextMetrics ? contextMetrics.isOverBudget : remainingBudget < 0;
 
-  const displayLocation = 'location' in activePlan ? (activePlan.location as string) : (activePlan.venue || 'Location TBD');
+  const displayLocation = activePlan.location || 'Location TBD';
 
   const handleStartEdit = () => {
     setEditDate(activePlan.eventDate || '');
     setEditGuests(String(activePlan.guestCount));
     setEditCap(String(activePlan.totalCap));
-    setEditLocation(displayLocation);
+    setEditLocation(activePlan.location || '');
     setEditError(null);
     setIsEditing(true);
   };
@@ -231,6 +230,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
                     type="text"
                     value={editLocation}
                     onChange={(e) => setEditLocation(e.target.value)}
+                    placeholder="e.g. City, Venue or TBD"
                     className="h-8 text-xs bg-background"
                   />
                 </div>

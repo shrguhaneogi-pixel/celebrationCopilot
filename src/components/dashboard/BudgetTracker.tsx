@@ -199,6 +199,17 @@ export function BudgetTracker({
     setEditError(null);
   };
 
+  const handleInlineKeyDown = (e: React.KeyboardEvent, itemId: string) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleSaveEdit(itemId);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setEditingItemId(null);
+      setEditError(null);
+    }
+  };
+
   const handleDeleteItem = (itemId: string) => {
     if (!dispatchMutation) return;
     dispatchMutation({
@@ -398,16 +409,20 @@ export function BudgetTracker({
                             <Input
                               value={editName}
                               onChange={(e) => setEditName(e.target.value)}
+                              onKeyDown={(e) => handleInlineKeyDown(e, item.id)}
                               placeholder="Name"
                               className="h-8 text-xs bg-background"
+                              aria-label="Item name"
                             />
                           </div>
                           <div>
                             <Input
                               value={editCategory}
                               onChange={(e) => setEditCategory(e.target.value)}
+                              onKeyDown={(e) => handleInlineKeyDown(e, item.id)}
                               placeholder="Category"
                               className="h-8 text-xs bg-background"
+                              aria-label="Item category"
                             />
                           </div>
                           <div>
@@ -416,8 +431,10 @@ export function BudgetTracker({
                               min="0"
                               value={editEstCost}
                               onChange={(e) => setEditEstCost(e.target.value)}
+                              onKeyDown={(e) => handleInlineKeyDown(e, item.id)}
                               placeholder="Estimated"
                               className="h-8 text-xs bg-background"
+                              aria-label="Estimated cost"
                             />
                           </div>
                           <div>
@@ -426,8 +443,10 @@ export function BudgetTracker({
                               min="0"
                               value={editActualCost}
                               onChange={(e) => setEditActualCost(e.target.value)}
+                              onKeyDown={(e) => handleInlineKeyDown(e, item.id)}
                               placeholder="Actual"
                               className="h-8 text-xs bg-background"
+                              aria-label="Actual cost"
                             />
                           </div>
                         </div>

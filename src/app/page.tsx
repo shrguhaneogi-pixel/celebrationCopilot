@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { EventPlanProvider, useEventPlan } from '@/context/EventPlanContext';
 import { EventHeader } from '@/components/dashboard/EventHeader';
 import { BudgetTracker } from '@/components/dashboard/BudgetTracker';
@@ -9,8 +10,8 @@ import { VendorTracker } from '@/components/dashboard/VendorTracker';
 import { ChatSidebar } from '@/components/dashboard/ChatSidebar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Sparkles, DollarSign, Calendar, Users, MessageSquare, AlertCircle, X, RotateCcw } from 'lucide-react';
-import { MOCK_EVENT_PLAN } from '@/lib/mock-data';
+import { Sparkles, DollarSign, Calendar, Users, MessageSquare, AlertCircle, X, RotateCcw, LogIn, LogOut } from 'lucide-react';
+import { MOCK_CHAT_HISTORY } from '@/lib/mock-data';
 
 function DashboardContent() {
   const { plan, userEmail, signOut, error, clearError, resetPlan } = useEventPlan();
@@ -44,7 +45,7 @@ function DashboardContent() {
             )}
 
             <Badge variant="outline" className="text-xs font-mono font-medium hidden sm:inline-flex">
-              Plan v{plan.version} • Canonical
+              {userEmail ? 'Cloud Synced' : 'Local Mode'} • v{plan.version}
             </Badge>
 
             <Button
@@ -58,16 +59,35 @@ function DashboardContent() {
               <span className="hidden md:inline">Reset</span>
             </Button>
 
-            {userEmail && (
+            {userEmail ? (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={signOut}
                 className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer inline-flex items-center gap-1"
                 title="Sign out of your account"
+                aria-label="Sign Out"
               >
+                <LogOut className="w-3.5 h-3.5" aria-hidden="true" />
                 <span className="hidden sm:inline">Sign Out</span>
               </Button>
+            ) : (
+              <Link
+                href="/login"
+                role="button"
+                className="text-xs h-7 px-2 font-medium text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors cursor-pointer inline-flex items-center gap-1"
+                title="Sign in to your account"
+                aria-label="Sign In"
+                onKeyDown={(e) => {
+                  if (e.key === ' ') {
+                    e.preventDefault();
+                    e.currentTarget.click();
+                  }
+                }}
+              >
+                <LogIn className="w-3.5 h-3.5" aria-hidden="true" />
+                <span className="hidden sm:inline">Sign In</span>
+              </Link>
             )}
 
             {/* Mobile Chat Toggle Button */}
@@ -160,7 +180,7 @@ function DashboardContent() {
 
           {/* Conversational Copilot Sidebar (4 columns) */}
           <aside className={`lg:col-span-4 sticky top-20 ${mobileChatOpen ? 'block' : 'hidden lg:block'}`}>
-            <ChatSidebar initialMessages={MOCK_EVENT_PLAN.chatHistory} />
+            <ChatSidebar initialMessages={MOCK_CHAT_HISTORY} />
           </aside>
         </div>
       </div>

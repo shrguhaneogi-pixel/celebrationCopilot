@@ -1,30 +1,9 @@
-export interface MockBudgetItem {
-  id: string;
-  name: string;
-  category: string;
-  estimatedCost: number;
-  actualCost: number;
-  status: 'projected' | 'quoted' | 'committed' | 'paid';
-  notes?: string;
-}
+import { BudgetItem, Milestone, VendorItem, EventPlan } from '@/domain/event-plan.schema';
 
-export interface MockMilestone {
-  id: string;
-  title: string;
-  offsetDays: number;
-  dueDate: string;
-  category: 'venue' | 'catering' | 'media' | 'planning' | 'execution';
-  completed: boolean;
-}
-
-export interface MockVendorItem {
-  id: string;
-  name: string;
-  category: string;
-  priority: 'high' | 'medium' | 'low';
-  status: 'not_started' | 'contacted' | 'quoted' | 'booked';
-  suggestedQuestions: string[];
-}
+export type MockBudgetItem = BudgetItem;
+export type MockMilestone = Milestone;
+export type MockVendorItem = VendorItem;
+export type MockEventPlan = EventPlan;
 
 export interface MockProposalDiff {
   title: string;
@@ -40,27 +19,14 @@ export interface MockChatMessage {
   proposalDiff?: MockProposalDiff;
 }
 
-export interface MockEventPlan {
-  id: string;
-  title: string;
-  eventType: string;
-  eventDate: string;
-  venue: string;
-  guestCount: number;
-  currency: string;
-  totalCap: number;
-  items: MockBudgetItem[];
-  milestones: MockMilestone[];
-  vendors: MockVendorItem[];
-  chatHistory: MockChatMessage[];
-}
-
 export const MOCK_EVENT_PLAN: MockEventPlan = {
   id: 'plan-in-wed-001',
+  version: 1,
   title: "Aarav & Priya's Grand Wedding & Reception",
   eventType: 'Traditional Indian Wedding (Sangeet, Varmala & Reception)',
   eventDate: '2026-12-18',
-  venue: 'The Grand Heritage Palace, Jaipur, Rajasthan',
+  timezone: 'Asia/Kolkata',
+  location: 'The Grand Heritage Palace, Jaipur, Rajasthan',
   guestCount: 450,
   currency: 'INR',
   totalCap: 2500000, // ₹25,00,000
@@ -220,26 +186,29 @@ export const MOCK_EVENT_PLAN: MockEventPlan = {
       ],
     },
   ],
-  chatHistory: [
-    {
-      id: 'msg-1',
-      sender: 'user',
-      text: 'Add 4 live Punjabi dhol players and a brass band for the Baraat entry on wedding day.',
-      timestamp: '10:42 AM',
-    },
-    {
-      id: 'msg-2',
-      sender: 'assistant',
-      text: "I've generated a proposal to add the Baraat dhol & brass band ensemble. Please review the proposal diff below before applying it to your live plan.",
-      timestamp: '10:42 AM',
-      proposalDiff: {
-        title: 'Add Baraat Dhol & Brass Band Ensemble',
-        costDelta: 45000,
-        mutations: [
-          'ADD_BUDGET_ITEM: Baraat Dhol Players & Brass Band (₹45,000 estimated)',
-          'ADD_MILESTONE: Sound check Baraat ensemble at -1d (17 Dec 2026)',
-        ],
-      },
-    },
-  ],
+  createdAt: '2026-10-29T10:00:00.000Z',
+  updatedAt: '2026-10-29T10:00:00.000Z',
 };
+
+export const MOCK_CHAT_HISTORY: MockChatMessage[] = [
+  {
+    id: 'msg-1',
+    sender: 'user',
+    text: 'Add 4 live Punjabi dhol players and a brass band for the Baraat entry on wedding day.',
+    timestamp: '10:42 AM',
+  },
+  {
+    id: 'msg-2',
+    sender: 'assistant',
+    text: "I've generated a proposal to add the Baraat dhol & brass band ensemble. Please review the proposal diff below before applying it to your live plan.",
+    timestamp: '10:42 AM',
+    proposalDiff: {
+      title: 'Add Baraat Dhol & Brass Band Ensemble',
+      costDelta: 45000,
+      mutations: [
+        'ADD_BUDGET_ITEM: Baraat Dhol Players & Brass Band (₹45,000 estimated)',
+        'ADD_MILESTONE: Sound check Baraat ensemble at -1d (17 Dec 2026)',
+      ],
+    },
+  },
+];

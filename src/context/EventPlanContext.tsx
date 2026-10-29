@@ -14,7 +14,7 @@ export const INITIAL_EVENT_PLAN: EventPlan = {
   eventType: MOCK_EVENT_PLAN.eventType,
   eventDate: MOCK_EVENT_PLAN.eventDate,
   timezone: 'Asia/Kolkata',
-  location: MOCK_EVENT_PLAN.venue,
+  location: MOCK_EVENT_PLAN.location,
   guestCount: MOCK_EVENT_PLAN.guestCount,
   currency: MOCK_EVENT_PLAN.currency,
   totalCap: MOCK_EVENT_PLAN.totalCap,

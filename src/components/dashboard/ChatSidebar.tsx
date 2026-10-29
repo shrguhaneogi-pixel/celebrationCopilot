@@ -58,7 +58,7 @@ export function ChatSidebar({
 
   // Auto-scroll to latest message
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    messagesEndRef.current?.scrollIntoView?.({ behavior: 'smooth' });
   }, [messages, isLoading]);
 
   const handleApply = () => {
