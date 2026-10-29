@@ -241,16 +241,37 @@ export function EventPlanProvider({
       }
 
       // 3. Commit state atomically
+      const nextRevision = newRevision !== undefined ? newRevision : revision + 1;
       setPlan(validation.data);
-      if (newRevision !== undefined) {
-        setRevision(newRevision);
-      } else {
-        setRevision((prev) => prev + 1);
-      }
+      setRevision(nextRevision);
       setError(null);
+
+      // 4. Async sync approved plan to Supabase if authenticated and eventId exists
+      if (typeof window !== 'undefined' && eventId) {
+        try {
+          const supabase = createClient();
+          supabase
+            .from('events')
+            .update({
+              plan: validation.data,
+              revision: nextRevision,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', eventId)
+            .eq('revision', revision)
+            .then(({ error: syncErr }) => {
+              if (syncErr) {
+                setError(`Remote sync error: ${syncErr.message}`);
+              }
+            });
+        } catch {
+          // Ignore offline errors
+        }
+      }
+
       return { success: true, plan: validation.data };
     },
-    [plan.version]
+    [plan.version, revision, eventId]
   );
 
   const resetPlan = useCallback(() => {

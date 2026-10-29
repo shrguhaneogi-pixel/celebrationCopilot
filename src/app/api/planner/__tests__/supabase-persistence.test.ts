@@ -79,7 +79,7 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
     expect(data.error).toContain('Unauthorized');
   });
 
-  it('loads authoritative plan from database and ignores client-supplied plan', async () => {
+  it('loads authoritative plan from database and ignores client-supplied plan without committing before approval', async () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://mock.supabase.co');
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'mock-anon-key');
 
@@ -100,18 +100,7 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
       revision: 1,
     });
 
-    // Mock atomic persistence
-    vi.spyOn(eventsDb, 'persistEventAtomic').mockResolvedValueOnce({
-      success: true,
-      record: {
-        id: mockEventId,
-        user_id: mockUserId,
-        plan: { ...authoritativeDbPlan, guestCount: 250, version: 2 },
-        revision: 2,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    });
+    const persistSpy = vi.spyOn(eventsDb, 'persistEventAtomic');
 
     // Client passes a forged currentPlan with guestCount = 999
     const clientForgedPlan = { ...authoritativeDbPlan, guestCount: 999 };
@@ -130,16 +119,13 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.success).toBe(true);
-    expect(data.revision).toBe(2);
+    expect(data.plan.guestCount).toBe(250);
+    expect(data.revision).toBe(1); // Unchanged until approved!
 
     // Verify AI received the authoritative DB plan (200), NOT client-supplied forged plan (999)
     expect(eventsDb.getAuthoritativeEvent).toHaveBeenCalledWith(mockEventId, mockUserId);
-    expect(eventsDb.persistEventAtomic).toHaveBeenCalledWith(
-      mockEventId,
-      mockUserId,
-      1,
-      expect.objectContaining({ guestCount: 250 })
-    );
+    // Invariant: persistEventAtomic must NOT be called during proposal generation
+    expect(persistSpy).not.toHaveBeenCalled();
   });
 
   it('rejects access when user attempts to access an event belonging to another user (RLS guard)', async () => {
@@ -176,47 +162,40 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
     expect(eventsDb.getAuthoritativeEvent).toHaveBeenCalledWith(mockEventId, otherUserId);
   });
 
-  it('returns HTTP 409 Conflict when atomic compare-and-swap detects a revision race', async () => {
-    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://mock.supabase.co');
-    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'mock-anon-key');
-
-    vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce({
-      auth: {
-        getUser: vi.fn().mockResolvedValueOnce({
-          data: { user: { id: mockUserId, email: 'owner@celebration.com' } },
-          error: null,
+  it('detects a revision race and reports conflict when atomic compare-and-swap encounters stale revision', async () => {
+    const mockSupabase = {
+      from: vi.fn().mockReturnValue({
+        update: vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              eq: vi.fn().mockReturnValue({
+                select: vi.fn().mockReturnValue({
+                  maybeSingle: vi.fn().mockResolvedValueOnce({
+                    data: null, // CAS failed: 0 rows updated
+                    error: null,
+                  }),
+                }),
+              }),
+            }),
+          }),
         }),
-      },
-    } as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>);
-
-    vi.spyOn(eventsDb, 'getAuthoritativeEvent').mockResolvedValueOnce({
-      id: mockEventId,
-      plan: authoritativeDbPlan,
-      revision: 1,
-    });
-
-    // Stale revision: another request modified revision from 1 to 2 before this write committed
-    vi.spyOn(eventsDb, 'persistEventAtomic').mockResolvedValueOnce({
-      success: false,
-      conflict: true,
-      error: 'Conflict: Event was updated by another request (expected revision 1).',
-    });
-
-    const req = new NextRequest('http://localhost:3000/api/planner', {
-      method: 'POST',
-      body: JSON.stringify({
-        message: 'Increase budget ceiling',
-        eventId: mockEventId,
       }),
-      headers: { 'Content-Type': 'application/json' },
-    });
+    };
 
-    const res = await POST(req);
-    expect(res.status).toBe(409);
-    const data = await res.json();
-    expect(data.success).toBe(false);
-    expect(data.conflict).toBe(true);
-    expect(data.error).toContain('Conflict: Event was updated by another request');
+    vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce(
+      mockSupabase as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>
+    );
+
+    const result = await eventsDb.persistEventAtomic(
+      mockEventId,
+      mockUserId,
+      1, // Expected revision 1
+      authoritativeDbPlan
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.conflict).toBe(true);
+    expect(result.error).toContain('Conflict: Event was updated by another request');
   });
 
   it('preserves database state without writing when AI proposal violates domain invariants', async () => {

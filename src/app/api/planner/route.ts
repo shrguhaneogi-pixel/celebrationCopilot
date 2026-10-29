@@ -5,7 +5,7 @@ import { ProposalSchema } from '@/domain/proposal.schema';
 import { applyProposal } from '@/domain/planning-engine';
 import { generatePlannerProposal, AIProviderError } from '@/lib/ai/provider';
 import { createClient } from '@/lib/supabase/server';
-import { getAuthoritativeEvent, getOrCreateUserEvent, persistEventAtomic } from '@/lib/supabase/events';
+import { getAuthoritativeEvent, getOrCreateUserEvent } from '@/lib/supabase/events';
 
 const PlannerRequestSchema = z
   .object({
@@ -55,7 +55,6 @@ export async function POST(req: NextRequest) {
     let authoritativePlan: EventPlan;
     let targetEventId: string;
     let expectedRevision: number;
-    let userId: string | null = null;
 
     const supabaseConfigured = Boolean(
       process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
@@ -72,8 +71,6 @@ export async function POST(req: NextRequest) {
             { status: 401, headers: SECURITY_HEADERS }
           );
         }
-
-        userId = user.id;
 
         // Load Authoritative Plan from Database (RLS verified on auth.uid())
         if (eventId) {
@@ -148,54 +145,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 6. Optimistic Concurrency Persistence (if authenticated)
-    let persistedPlan = result.plan;
-    let nextRevision = expectedRevision + 1;
-
-    if (userId && supabaseConfigured) {
-      const persistResult = await persistEventAtomic(
-        targetEventId,
-        userId,
-        expectedRevision,
-        result.plan
-      );
-
-      if (!persistResult.success) {
-        if (persistResult.conflict) {
-          return NextResponse.json(
-            {
-              success: false,
-              conflict: true,
-              error: persistResult.error,
-              latencyMs,
-            },
-            { status: 409, headers: SECURITY_HEADERS }
-          );
-        }
-
-        return NextResponse.json(
-          {
-            success: false,
-            error: `Failed to persist event plan: ${persistResult.error}`,
-            latencyMs,
-          },
-          { status: 500, headers: SECURITY_HEADERS }
-        );
-      }
-
-      if (persistResult.record) {
-        persistedPlan = persistResult.record.plan;
-        nextRevision = persistResult.record.revision;
-      }
-    }
-
-    // 7. Successful Execution Return
+    // 6. Proposal Generation Return (Untrusted Proposer Guarantee)
+    // Invariant: AI proposals are previews and must NOT be persisted to PostgreSQL
+    // until explicitly reviewed and approved by the user in the client UI.
     return NextResponse.json(
       {
         success: true,
         eventId: targetEventId,
-        revision: nextRevision,
-        plan: persistedPlan,
+        revision: expectedRevision,
+        plan: result.plan,
         derivedMetrics: result.derivedMetrics,
         appliedOperationsCount: result.appliedOperationsCount,
         proposal: proposalValidation.data,
