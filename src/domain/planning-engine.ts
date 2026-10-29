@@ -35,8 +35,10 @@ export function calculateTotals(plan: EventPlan): DerivedEventMetrics {
     projectedTotal += item.estimatedCost;
     if (item.status === 'committed' || item.status === 'paid') {
       committedTotal += item.actualCost;
+      actualTotal += item.actualCost;
+    } else {
+      actualTotal += item.actualCost > 0 ? item.actualCost : item.estimatedCost;
     }
-    actualTotal += item.actualCost > 0 ? item.actualCost : item.estimatedCost;
   }
 
   if (
@@ -47,10 +49,11 @@ export function calculateTotals(plan: EventPlan): DerivedEventMetrics {
     throw new DomainEngineError('Arithmetic calculation resulted in unsafe integer overflow');
   }
 
-  const remainingBudget = plan.totalCap - projectedTotal;
+  const effectiveSpend = Math.max(projectedTotal, actualTotal);
+  const remainingBudget = plan.totalCap - effectiveSpend;
   const isOverBudget = remainingBudget < 0;
   const allocationPercent =
-    plan.totalCap > 0 ? Math.round((projectedTotal / plan.totalCap) * 100) : 0;
+    plan.totalCap > 0 ? Math.round((effectiveSpend / plan.totalCap) * 100) : 0;
 
   const completedMilestones = plan.milestones.filter((m) => m.completed).length;
   const totalMilestones = plan.milestones.length;
@@ -147,6 +150,9 @@ export function applyMutation(plan: EventPlan, mutation: PlanMutation): EventPla
     }
 
     case 'ADD_BUDGET_ITEM': {
+      if (mutation.id && plan.items.some((item) => item.id === mutation.id)) {
+        throw new DomainEngineError(`Budget item with ID "${mutation.id}" already exists in the plan`);
+      }
       const newItemId = mutation.id || `item-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const newItem = {
         id: newItemId,
@@ -201,6 +207,9 @@ export function applyMutation(plan: EventPlan, mutation: PlanMutation): EventPla
     }
 
     case 'ADD_MILESTONE': {
+      if (mutation.id && plan.milestones.some((m) => m.id === mutation.id)) {
+        throw new DomainEngineError(`Milestone with ID "${mutation.id}" already exists in the plan`);
+      }
       const newMsId = mutation.id || `ms-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const newMilestone = {
         id: newMsId,
@@ -259,6 +268,9 @@ export function applyMutation(plan: EventPlan, mutation: PlanMutation): EventPla
     }
 
     case 'ADD_VENDOR': {
+      if (mutation.id && plan.vendors.some((v) => v.id === mutation.id)) {
+        throw new DomainEngineError(`Vendor task with ID "${mutation.id}" already exists in the plan`);
+      }
       const newVendorId = mutation.id || `ven-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const newVendor = {
         id: newVendorId,
