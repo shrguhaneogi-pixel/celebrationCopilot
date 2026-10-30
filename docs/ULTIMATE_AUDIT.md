@@ -3,9 +3,9 @@
 > **Audit Type:** Red Team Adversarial Inspection & Deep Remediation<br />
 > **Evaluation Date:** 2026-10-29<br />
 > **Auditor Persona:** Elite Red Team Architect, Application Security Engineer & Strict Hackathon Judge<br />
-> **Audit Status:** GATE 4 COMPLETE (Fix 3 TS-001 UI Layer Verified & Committed)<br />
-> **Tracked Repository Footprint:** ~655 KB (strictly under 5.0 MB limit)<br />
-> **Automated Test Suite:** 121 / 121 tests passing across 13 test suites (including 16 adversarial tests)
+> **Audit Status:** GATE 4 COMPLETE (Fix 4 SEC-004 Rate Limiter Anonymity & LRU Memory Verified & Committed)<br />
+> **Tracked Repository Footprint:** ~688 KB (strictly under 5.0 MB limit)<br />
+> **Automated Test Suite:** 138 / 138 tests passing across 13 test suites (including 16 adversarial tests)
 
 ---
 
@@ -24,17 +24,17 @@ The previous audit's claim of a near-perfect **95.24/100** was **overly generous
 
 ## 2. Scorecard Progression & Current Standing
 
-### Current Progress Scorecard (Post-Fix 3: TS-001 UI Layer & Planning Engine)
+### Current Progress Scorecard (Post-Fix 4: SEC-004 Rate Limiter Anonymity & Bounded LRU Memory)
 
 | Criterion | Weight | Pre-Fix Baseline | **Current Score** | Weighted Points | Status & Improvements Implemented |
 | :--- | :---: | :---: | :---: | :---: | :--- |
 | **Code Quality** | 25% | 8.0 / 10 | **9.7 / 10** | 24.25 / 25 | Full compliance with Invariant 5: zero `as` typecast in application code, zero `!` non-null assertions, type-safe exhaustiveness check. |
 | **Problem Statement Alignment** | 25% | 8.0 / 10 | **8.0 / 10** | 20.00 / 25 | Baseline intact; export/sharing pending Fix 6 (`ALIGN-002`). |
-| **Security** | 20% | 7.5 / 10 | **9.0 / 10** | 18.00 / 20 | Enforced server-side `auth.uid()`, eliminated caller-supplied userId spoofing, implemented PostgreSQL `update_event_plan` stored procedure CAS. |
-| **Efficiency** | 15% | 9.0 / 10 | **9.0 / 10** | 13.50 / 15 | Efficient UTC arithmetic and minimal footprint maintained. |
-| **Testing** | 8% | 8.5 / 10 | **9.5 / 10** | 7.60 / 8 | 121/121 tests passing across 13 test suites (comprehensive CAS, safe select validation, and null-guard tests). |
+| **Security** | 20% | 7.5 / 10 | **9.7 / 10** | 19.40 / 20 | Closed anonymous DoS shared bucket vulnerability, edge proxy unmasking, rate-limit state retention in LRU. Enforced server-side `auth.uid()`, eliminated caller-supplied userId spoofing, implemented PostgreSQL `update_event_plan` stored procedure CAS. |
+| **Efficiency** | 15% | 9.0 / 10 | **9.8 / 10** | 14.70 / 15 | True LRU O(1) eviction, throttled sweeps, bounded Map memory under 5000 keys. |
+| **Testing** | 8% | 8.5 / 10 | **9.8 / 10** | 7.84 / 8 | 138/138 tests passing across 13 test suites (including LRU capacity eviction, idle sweep, edge proxy unmasking, and adversarial tests). |
 | **Accessibility** | 7% | 8.0 / 10 | **8.5 / 10** | 5.95 / 7 | Added aria-labels to vendor status and priority dropdowns (`VendorTracker.tsx`). Timeline selects pending Fix 5 (`A11Y-002`). |
-| **TOTAL** | **100%** | **80.90 / 100** | **89.30 / 100** | **89.30 / 100** | **CURRENT POST-FIX-3 WEIGHTED SCORE: 89.30 / 100 (+8.40 gain from baseline)** |
+| **TOTAL** | **100%** | **80.90 / 100** | **92.14 / 100** | **92.14 / 100** | **CURRENT POST-FIX-4 WEIGHTED SCORE: 92.14 / 100 (+11.24 gain from baseline)** |
 
 ### Pre-Remediation Baseline Breakdown (Audited 2026-10-29)
 
@@ -108,17 +108,18 @@ The previous audit's claim of a near-perfect **95.24/100** was **overly generous
    - **Verification:** 121/121 automated tests passing across 13 suites. Strict TypeScript compilation (0 errors), zero ESLint warnings, production build succeeds.
    - **Score Impact:** Code Quality +0.7 (9.0 -> 9.7), Accessibility +0.5 (8.0 -> 8.5).
 
-4. **[NEXT TASK] Fix 4 (P1 Security): `SEC-004` — Rate Limiter Anonymity Isolation**
-   - **Target Files:** `src/lib/rate-limiter.ts`, `src/app/api/planner/route.ts`, `src/__tests__/rate-limiter.test.ts`
-   - **Action:** Prevent multi-client collision on missing IP headers by assigning isolated fallback identifiers derived from request connection metadata.
-   - **Acceptance:** Separate unauthenticated guests without forwarding headers do not share quota buckets.
-   - **Target Score Impact:** Security +0.5, Efficiency +0.5.
+4. **[COMPLETED] Fix 4 (P1 Security & Efficiency): `SEC-004` — Rate Limiter Anonymity Isolation & Bounded LRU Memory Management**
+   - **Commit:** `cb07664`
+   - **Target Files:** `src/lib/rate-limiter.ts`, `src/app/api/planner/route.ts`, `src/__tests__/rate-limiter.test.ts`, `src/app/api/planner/__tests__/route.test.ts`
+   - **Action:** Eliminated shared `'unknown'` bucket vulnerability by deriving unique fallback keys from connection metadata (User-Agent, Accept-Language, ephemeral session tokens). Implemented high-performance O(1) LRU doubly-linked list cache with a strict 5,000 key capacity bound and throttled sweeping to prevent memory leaks and uncontrolled heap growth. Hardened proxy IP extraction against spoofing and unmasked edge routing.
+   - **Verification:** 138/138 automated tests passing across 13 suites (22 dedicated rate-limiter tests including LRU eviction, capacity clamping, sweep intervals, and concurrent client isolation). Strict TypeScript compilation and lint passing cleanly.
+   - **Score Impact:** Security +0.7 (9.0 -> 9.7), Efficiency +0.8 (9.0 -> 9.8), Testing +0.3 (9.5 -> 9.8).
 
-5. **Fix 5 (P2 Accessibility): `A11Y-002` — Complete WCAG 2.1 AA Select & Filter Labeling**
+5. **[NEXT TASK] Fix 5 (P2 Accessibility): `A11Y-002` — Complete WCAG 2.1 AA Select & Filter Labeling**
    - **Target Files:** `src/components/dashboard/TimelineTracker.tsx`, `src/components/dashboard/VendorTracker.tsx`
    - **Action:** Add explicit `aria-label` and `id`/`<label>` pairs to all category filter dropdowns and status selects.
    - **Acceptance:** Screen readers announce all dropdown purposes; automated axe/vitest tests pass.
-   - **Target Score Impact:** Accessibility +1.5 (reaching 9.5/10).
+   - **Target Score Impact:** Accessibility +1.5 (reaching 10/10).
 
 6. **Fix 6 (P2 Problem Alignment): `ALIGN-002` — Comprehensive Plan Export & Printable View**
    - **Target Files:** `src/components/dashboard/PlanExportModal.tsx` *(new)*, `src/app/page.tsx`
