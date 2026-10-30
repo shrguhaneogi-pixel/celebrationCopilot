@@ -6,7 +6,7 @@ import { applyProposal } from '@/domain/planning-engine';
 import { generatePlannerProposal, AIProviderError } from '@/lib/ai/provider';
 import { createClient } from '@/lib/supabase/server';
 import { getAuthoritativeEvent, getOrCreateUserEvent } from '@/lib/supabase/events';
-import { checkRateLimit } from '@/lib/rate-limiter';
+import { checkRateLimit, extractClientIdentifierFromHeaders } from '@/lib/rate-limiter';
 
 const PlannerRequestSchema = z
   .object({
@@ -24,16 +24,32 @@ const SECURITY_HEADERS = {
   Expires: '0',
 };
 
+function resolveClientIdentifier(req: NextRequest): string {
+  return extractClientIdentifierFromHeaders({
+    xForwardedFor: req.headers.get('x-forwarded-for'),
+    xRealIp: req.headers.get('x-real-ip'),
+    cfConnectingIp: req.headers.get('cf-connecting-ip'),
+    trueClientIp: req.headers.get('true-client-ip'),
+    copilotGuestId:
+      req.headers.get('copilot_guest_id') ||
+      req.headers.get('x-copilot-guest-id') ||
+      req.cookies.get('copilot_guest_id')?.value,
+    xSessionId:
+      req.headers.get('x-session-id') ||
+      req.cookies.get('x-session-id')?.value ||
+      req.cookies.get('session_id')?.value,
+    userAgent: req.headers.get('user-agent'),
+    acceptLanguage: req.headers.get('accept-language'),
+  });
+}
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
 
   try {
-    // 0. Rate Limiting Guard (Sliding-window per IP)
-    const rawForwarded = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim();
-    const rawRealIp = req.headers.get('x-real-ip')?.trim();
-    const clientIp = rawForwarded || rawRealIp || '127.0.0.1';
-
-    const rateLimitResult = checkRateLimit(clientIp);
+    // 0. Rate Limiting Guard (Sliding-window per client identity)
+    const clientIdentifier = resolveClientIdentifier(req);
+    const rateLimitResult = checkRateLimit(clientIdentifier);
     if (!rateLimitResult.allowed) {
       return NextResponse.json(
         {

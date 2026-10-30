@@ -288,4 +288,222 @@ describe('POST /api/planner Route Handler', () => {
     const freshRes = await POST(freshReq);
     expect(freshRes.status).toBe(200);
   });
+
+  describe('Rate Limiter Anonymity Isolation (SEC-004)', () => {
+    it('isolates Cloudflare cf-connecting-ip and true-client-ip headers', async () => {
+      const cfIp = '192.0.2.111';
+      const trueIp = '192.0.2.222';
+
+      // Exhaust cf-connecting-ip
+      for (let i = 0; i < 15; i++) {
+        const req = new NextRequest('http://localhost:3000/api/planner', {
+          method: 'POST',
+          body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+          headers: {
+            'Content-Type': 'application/json',
+            'cf-connecting-ip': cfIp,
+          },
+        });
+        const res = await POST(req);
+        expect(res.status).toBe(200);
+      }
+
+      // 16th cf-connecting-ip request must be blocked
+      const blockedReq = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'cf-connecting-ip': cfIp,
+        },
+      });
+      expect((await POST(blockedReq)).status).toBe(429);
+
+      // true-client-ip request must be isolated and allowed
+      const allowedReq = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'true-client-ip': trueIp,
+        },
+      });
+      expect((await POST(allowedReq)).status).toBe(200);
+    });
+
+    it('isolates anonymous guests using copilot_guest_id header and cookie', async () => {
+      const guestAlpha = 'guest-alpha-123';
+      const guestBeta = 'guest-beta-456';
+
+      // Exhaust guest Alpha
+      for (let i = 0; i < 15; i++) {
+        const req = new NextRequest('http://localhost:3000/api/planner', {
+          method: 'POST',
+          body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+          headers: {
+            'Content-Type': 'application/json',
+            'copilot_guest_id': guestAlpha,
+          },
+        });
+        expect((await POST(req)).status).toBe(200);
+      }
+
+      // 16th request for Alpha is blocked
+      const blockedAlpha = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'copilot_guest_id': guestAlpha,
+        },
+      });
+      expect((await POST(blockedAlpha)).status).toBe(429);
+
+      // Guest Beta via header is unaffected
+      const allowedBeta = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'copilot_guest_id': guestBeta,
+        },
+      });
+      expect((await POST(allowedBeta)).status).toBe(200);
+
+      // Guest Gamma via cookie is unaffected
+      const allowedGammaCookie = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          Cookie: 'copilot_guest_id=guest-gamma-789',
+        },
+      });
+      expect((await POST(allowedGammaCookie)).status).toBe(200);
+    });
+
+    it('isolates anonymous guests using x-session-id', async () => {
+      const sessionA = 'session-token-aaa';
+      const sessionB = 'session-token-bbb';
+
+      for (let i = 0; i < 15; i++) {
+        const req = new NextRequest('http://localhost:3000/api/planner', {
+          method: 'POST',
+          body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-session-id': sessionA,
+          },
+        });
+        expect((await POST(req)).status).toBe(200);
+      }
+
+      const blockedSessionA = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionA,
+        },
+      });
+      expect((await POST(blockedSessionA)).status).toBe(429);
+
+      const allowedSessionB = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-session-id': sessionB,
+        },
+      });
+      expect((await POST(allowedSessionB)).status).toBe(200);
+    });
+
+    it('isolates anonymous guests via client metadata hash without IP or session header', async () => {
+      const uaA = 'Custom-Browser-A/1.0';
+      const langA = 'en-US';
+
+      const uaB = 'Custom-Browser-B/2.0';
+      const langB = 'fr-CA';
+
+      for (let i = 0; i < 15; i++) {
+        const req = new NextRequest('http://localhost:3000/api/planner', {
+          method: 'POST',
+          body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+          headers: {
+            'Content-Type': 'application/json',
+            'user-agent': uaA,
+            'accept-language': langA,
+          },
+        });
+        expect((await POST(req)).status).toBe(200);
+      }
+
+      // Exhausted client A
+      const blockedA = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'user-agent': uaA,
+          'accept-language': langA,
+        },
+      });
+      expect((await POST(blockedA)).status).toBe(429);
+
+      // Client B with distinct User-Agent / Language is unaffected
+      const allowedB = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'user-agent': uaB,
+          'accept-language': langB,
+        },
+      });
+      expect((await POST(allowedB)).status).toBe(200);
+    });
+
+    it('unmasks cf-connecting-ip when x-forwarded-for contains placeholder unknown', async () => {
+      const cfIpA = '198.51.100.10';
+      const cfIpB = '198.51.100.20';
+
+      for (let i = 0; i < 15; i++) {
+        const req = new NextRequest('http://localhost:3000/api/planner', {
+          method: 'POST',
+          body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+          headers: {
+            'Content-Type': 'application/json',
+            'x-forwarded-for': 'unknown',
+            'cf-connecting-ip': cfIpA,
+          },
+        });
+        expect((await POST(req)).status).toBe(200);
+      }
+
+      // 16th attempt for cfIpA should be blocked (429)
+      const blocked = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': 'unknown',
+          'cf-connecting-ip': cfIpA,
+        },
+      });
+      expect((await POST(blocked)).status).toBe(429);
+
+      // cfIpB should still succeed
+      const allowed = new NextRequest('http://localhost:3000/api/planner', {
+        method: 'POST',
+        body: JSON.stringify({ message: 'Plan update', currentPlan: basePlan }),
+        headers: {
+          'Content-Type': 'application/json',
+          'x-forwarded-for': 'unknown',
+          'cf-connecting-ip': cfIpB,
+        },
+      });
+      expect((await POST(allowed)).status).toBe(200);
+    });
+  });
 });
