@@ -56,6 +56,7 @@ function DashboardContent() {
               onClick={resetPlan}
               className="text-xs h-7 px-2 text-muted-foreground hover:text-foreground cursor-pointer inline-flex items-center gap-1"
               title="Reset plan to initial state"
+              aria-label="Reset plan to initial state"
             >
               <RotateCcw className="w-3 h-3" />
               <span className="hidden md:inline">Reset</span>
@@ -114,6 +115,8 @@ function DashboardContent() {
             <button
               type="button"
               onClick={() => setMobileChatOpen(!mobileChatOpen)}
+              aria-label={mobileChatOpen ? 'Close Planning AI chat and view plan' : 'Open Planning AI chat'}
+              aria-expanded={mobileChatOpen}
               className="lg:hidden p-2 rounded-md border border-border bg-card text-foreground hover:bg-muted text-xs font-medium inline-flex items-center gap-1.5 cursor-pointer"
             >
               <MessageSquare className="w-3.5 h-3.5 text-primary" />
@@ -151,9 +154,11 @@ function DashboardContent() {
           {/* Main Planner Panel (8 columns) */}
           <main className={`lg:col-span-8 space-y-4 ${mobileChatOpen ? 'hidden lg:block' : 'block'}`}>
             {/* Navigation Tabs */}
-            <nav className="flex items-center gap-1 border-b border-border pb-2 overflow-x-auto" aria-label="Dashboard sections">
+            <nav role="tablist" className="flex items-center gap-1 border-b border-border pb-2 overflow-x-auto" aria-label="Dashboard sections">
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'budget'}
                 onClick={() => setActiveTab('budget')}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   activeTab === 'budget'
@@ -167,6 +172,8 @@ function DashboardContent() {
 
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'timeline'}
                 onClick={() => setActiveTab('timeline')}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   activeTab === 'timeline'
@@ -180,6 +187,8 @@ function DashboardContent() {
 
               <button
                 type="button"
+                role="tab"
+                aria-selected={activeTab === 'vendors'}
                 onClick={() => setActiveTab('vendors')}
                 className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
                   activeTab === 'vendors'

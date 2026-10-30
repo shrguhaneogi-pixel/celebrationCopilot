@@ -87,7 +87,7 @@ export function extractClientIdentifierFromHeaders(headers: RequestIdentityHeade
   const cfConnectingIp = headers.cfConnectingIp?.trim();
   const trueClientIp = headers.trueClientIp?.trim();
 
-  const ipCandidates = [forwardedIp, realIp, cfConnectingIp, trueClientIp];
+  const ipCandidates = [cfConnectingIp, trueClientIp, realIp, forwardedIp];
   for (const candidate of ipCandidates) {
     if (
       candidate &&

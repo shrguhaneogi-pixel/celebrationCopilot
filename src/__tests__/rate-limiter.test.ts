@@ -290,6 +290,21 @@ describe('In-Memory Sliding-Window Rate Limiter', () => {
         })
       ).toBe('192.0.2.88');
 
+      // 4b. Edge proxy header takes precedence over client-spoofed x-forwarded-for
+      expect(
+        extractClientIdentifierFromHeaders({
+          xForwardedFor: '10.0.0.99, 127.0.0.1',
+          cfConnectingIp: '192.0.2.77',
+        })
+      ).toBe('192.0.2.77');
+
+      expect(
+        extractClientIdentifierFromHeaders({
+          xForwardedFor: '10.0.0.99',
+          trueClientIp: '192.0.2.88',
+        })
+      ).toBe('192.0.2.88');
+
       // 5. copilotGuestId
       expect(
         extractClientIdentifierFromHeaders({

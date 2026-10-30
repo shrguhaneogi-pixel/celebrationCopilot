@@ -1,10 +1,33 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import React from 'react';
 import { renderHook, act } from '@testing-library/react';
 import { EventPlanProvider, useEventPlan, INITIAL_EVENT_PLAN } from '@/context/EventPlanContext';
 import { EventPlan } from '@/domain/event-plan.schema';
 import { PlanMutation } from '@/domain/proposal.schema';
+
+const mockRpc = vi.fn().mockResolvedValue({ data: [{ id: 'mock-id' }], error: null });
+const mockGetUser = vi.fn().mockResolvedValue({ data: { user: null }, error: null });
+
+vi.mock('@/lib/supabase/client', () => ({
+  createClient: () => ({
+    auth: {
+      getUser: mockGetUser,
+    },
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          order: () => ({
+            limit: () => ({
+              maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+            }),
+          }),
+        }),
+      }),
+    }),
+    rpc: mockRpc,
+  }),
+}));
 
 describe('EventPlanContext Canonical State & Manual Mutations', () => {
   beforeEach(() => {
@@ -380,5 +403,63 @@ describe('EventPlanContext Canonical State & Manual Mutations', () => {
     expect(result.current.plan.version).toBe(initialVersion);
     expect(result.current.plan.guestCount).toBe(initialGuests);
     expect(result.current.error).toBeDefined();
+  });
+
+  it('invokes update_event_plan RPC when dispatching mutations on a cloud-persisted event', async () => {
+    mockRpc.mockClear();
+    mockRpc.mockResolvedValueOnce({ data: [{ id: 'cloud-event-123' }], error: null });
+
+    const cloudWrapper = ({ children }: { children: React.ReactNode }) => (
+      <EventPlanProvider
+        persistToLocalStorage={false}
+        initialEventId="cloud-event-123"
+        initialRevision={1}
+      >
+        {children}
+      </EventPlanProvider>
+    );
+
+    const { result } = renderHook(() => useEventPlan(), { wrapper: cloudWrapper });
+
+    act(() => {
+      const res = result.current.dispatchMutation({
+        type: 'UPDATE_GUEST_COUNT',
+        guestCount: 300,
+      });
+      expect(res.success).toBe(true);
+    });
+
+    expect(mockRpc).toHaveBeenCalledWith('update_event_plan', {
+      p_event_id: 'cloud-event-123',
+      p_plan: expect.objectContaining({ guestCount: 300 }),
+      p_expected_version: 1,
+    });
+  });
+
+  it('handles CAS conflict error from update_event_plan RPC when remote event was modified concurrently', async () => {
+    mockRpc.mockClear();
+    // Simulate CAS conflict: 0 rows returned
+    mockRpc.mockResolvedValueOnce({ data: [], error: null });
+
+    const cloudWrapper = ({ children }: { children: React.ReactNode }) => (
+      <EventPlanProvider
+        persistToLocalStorage={false}
+        initialEventId="cloud-event-123"
+        initialRevision={1}
+      >
+        {children}
+      </EventPlanProvider>
+    );
+
+    const { result } = renderHook(() => useEventPlan(), { wrapper: cloudWrapper });
+
+    await act(async () => {
+      result.current.dispatchMutation({
+        type: 'UPDATE_GUEST_COUNT',
+        guestCount: 350,
+      });
+    });
+
+    expect(result.current.error).toContain('CAS Conflict');
   });
 });

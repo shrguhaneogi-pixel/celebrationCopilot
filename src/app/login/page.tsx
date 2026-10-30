@@ -86,9 +86,11 @@ export default function LoginPage() {
         {/* Auth Card */}
         <Card className="border-border shadow-lg bg-card">
           <CardHeader className="space-y-1 pb-4">
-            <div className="flex rounded-lg bg-muted p-1 mb-2">
+            <div role="tablist" aria-label="Authentication mode" className="flex rounded-lg bg-muted p-1 mb-2">
               <button
                 type="button"
+                role="tab"
+                aria-selected={mode === 'signin'}
                 onClick={() => {
                   setMode('signin');
                   setErrorMessage(null);
@@ -104,6 +106,8 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={mode === 'signup'}
                 onClick={() => {
                   setMode('signup');
                   setErrorMessage(null);

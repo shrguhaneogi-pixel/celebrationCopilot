@@ -156,6 +156,13 @@ describe('Adversarial Red Team Audit: Breaking Domain, AI, and Security Boundari
       expect(EventPlanSchema.safeParse({ ...basePlan, eventDate: '2026-13-45' }).success).toBe(false);
       expect(EventPlanSchema.safeParse({ ...basePlan, eventDate: '2027-02-29' }).success).toBe(false);
       expect(EventPlanSchema.safeParse({ ...basePlan, eventDate: '2028-02-29' }).success).toBe(true);
+
+      // MilestoneSchema must strictly reject impossible calendar due dates (e.g. 2026-02-31)
+      const invalidMilestone = {
+        ...basePlan.milestones[0],
+        dueDate: '2026-02-31',
+      };
+      expect(EventPlanSchema.safeParse({ ...basePlan, milestones: [invalidMilestone] }).success).toBe(false);
     });
   });
 

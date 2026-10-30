@@ -203,17 +203,16 @@ export function EventPlanProvider({
           try {
             const supabase = createClient();
             supabase
-              .from('events')
-              .update({
-                plan: validation.data,
-                revision: nextRevision,
-                updated_at: new Date().toISOString(),
+              .rpc('update_event_plan', {
+                p_event_id: eventId,
+                p_plan: validation.data,
+                p_expected_version: revision,
               })
-              .eq('id', eventId)
-              .eq('revision', revision)
-              .then(({ error: syncErr }) => {
+              .then(({ data: rpcData, error: syncErr }) => {
                 if (syncErr) {
                   setError(`Remote sync error: ${syncErr.message}`);
+                } else if (!rpcData || (Array.isArray(rpcData) && rpcData.length === 0)) {
+                  setError('CAS Conflict: The remote event was modified concurrently. Please refresh.');
                 }
               });
           } catch {
@@ -274,17 +273,16 @@ export function EventPlanProvider({
         try {
           const supabase = createClient();
           supabase
-            .from('events')
-            .update({
-              plan: validation.data,
-              revision: nextRevision,
-              updated_at: new Date().toISOString(),
+            .rpc('update_event_plan', {
+              p_event_id: eventId,
+              p_plan: validation.data,
+              p_expected_version: revision,
             })
-            .eq('id', eventId)
-            .eq('revision', revision)
-            .then(({ error: syncErr }) => {
+            .then(({ data: rpcData, error: syncErr }) => {
               if (syncErr) {
                 setError(`Remote sync error: ${syncErr.message}`);
+              } else if (!rpcData || (Array.isArray(rpcData) && rpcData.length === 0)) {
+                setError('CAS Conflict: The remote event was modified concurrently. Please refresh.');
               }
             });
         } catch {

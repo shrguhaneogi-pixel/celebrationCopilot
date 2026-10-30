@@ -58,7 +58,7 @@ export const MilestoneSchema = z
     id: z.string().min(1).max(100),
     title: z.string().min(1).max(150),
     offsetDays: z.number().int().min(-3650).max(3650),
-    dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+    dueDate: CalendarDateSchema.nullable().optional(),
     category: MilestoneCategorySchema.default('planning'),
     completed: z.boolean().default(false),
   })
