@@ -128,6 +128,10 @@ export function recalculateMilestoneDates(plan: EventPlan): EventPlan {
 export function applyMutation(plan: EventPlan, mutation: PlanMutation): EventPlan {
   switch (mutation.type) {
     case 'SET_DETAILS': {
+      if (mutation.eventDate !== undefined && mutation.eventDate !== null && !isValidCalendarDate(mutation.eventDate)) {
+        throw new DomainEngineError(`Invalid calendar date: "${mutation.eventDate}". Must be a valid real-world calendar date (YYYY-MM-DD).`);
+      }
+
       const nextPlan: EventPlan = {
         ...plan,
         title: mutation.title ?? plan.title,

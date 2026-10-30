@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { EventPlan, EventPlanSchema, DerivedEventMetrics } from '@/domain/event-plan.schema';
 import { PlanMutation } from '@/domain/proposal.schema';
 import { applyMutation, calculateTotals, recalculateMilestoneDates, DomainEngineError } from '@/domain/planning-engine';
@@ -91,6 +91,17 @@ export function EventPlanProvider({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const planRef = useRef<EventPlan>(plan);
+  const revisionRef = useRef<number>(revision);
+
+  useEffect(() => {
+    planRef.current = plan;
+  }, [plan]);
+
+  useEffect(() => {
+    revisionRef.current = revision;
+  }, [revision]);
+
   // Sync session & authoritative event from Supabase on client mount
   useEffect(() => {
     let isMounted = true;
@@ -116,6 +127,8 @@ export function EventPlanProvider({
           if (!fetchErr && data && isMounted) {
             const parsed = EventPlanSchema.safeParse(data.plan);
             if (parsed.success) {
+              planRef.current = parsed.data;
+              revisionRef.current = data.revision;
               setPlan(parsed.data);
               setEventId(data.id);
               setRevision(data.revision);
@@ -161,12 +174,14 @@ export function EventPlanProvider({
   const dispatchMutations = useCallback(
     (mutations: PlanMutation[]): MutationResult => {
       if (mutations.length === 0) {
-        return { success: true, plan };
+        return { success: true, plan: planRef.current };
       }
 
       try {
-        // 1. Deep clone plan to guarantee non-mutability on failure
-        let workingPlan = structuredClone(plan);
+        // 1. Deep clone plan from planRef.current to guarantee freshness even in synchronous loops
+        let workingPlan = structuredClone(planRef.current);
+        const currentVersion = planRef.current.version;
+        const currentRevision = revisionRef.current;
 
         // 2. Apply each mutation sequentially through deterministic domain engine
         for (const mutation of mutations) {
@@ -179,7 +194,7 @@ export function EventPlanProvider({
         // 4. Increment monotonic version counter
         workingPlan = {
           ...workingPlan,
-          version: plan.version + 1,
+          version: currentVersion + 1,
           updatedAt: new Date().toISOString(),
         };
 
@@ -191,7 +206,11 @@ export function EventPlanProvider({
           return { success: false, error: errMsg };
         }
 
-        const nextRevision = revision + 1;
+        const nextRevision = currentRevision + 1;
+
+        // Synchronously update ref so subsequent calls in the same tick read fresh state
+        planRef.current = validation.data;
+        revisionRef.current = nextRevision;
 
         // 6. Commit state atomically once
         setPlan(validation.data);
@@ -206,7 +225,7 @@ export function EventPlanProvider({
               .rpc('update_event_plan', {
                 p_event_id: eventId,
                 p_plan: validation.data,
-                p_expected_version: revision,
+                p_expected_version: currentRevision,
               })
               .then(({ data: rpcData, error: syncErr }) => {
                 if (syncErr) {
@@ -230,7 +249,7 @@ export function EventPlanProvider({
         return { success: false, error: message };
       }
     },
-    [plan, revision, eventId]
+    [eventId]
   );
 
   /**
@@ -256,14 +275,19 @@ export function EventPlanProvider({
       }
 
       // 2. Concurrency check: Reject stale proposal if plan was modified while AI was inferring
-      if (baseVersion !== plan.version) {
-        const errMsg = `Conflict: Plan was modified (version ${plan.version}) while proposal for version ${baseVersion} was pending.`;
+      if (baseVersion !== planRef.current.version) {
+        const errMsg = `Conflict: Plan was modified (version ${planRef.current.version}) while proposal for version ${baseVersion} was pending.`;
         setError(errMsg);
         return { success: false, error: errMsg };
       }
 
       // 3. Commit state atomically
-      const nextRevision = newRevision !== undefined ? newRevision : revision + 1;
+      const currentRevision = revisionRef.current;
+      const nextRevision = newRevision !== undefined ? newRevision : currentRevision + 1;
+
+      planRef.current = validation.data;
+      revisionRef.current = nextRevision;
+
       setPlan(validation.data);
       setRevision(nextRevision);
       setError(null);
@@ -276,7 +300,7 @@ export function EventPlanProvider({
             .rpc('update_event_plan', {
               p_event_id: eventId,
               p_plan: validation.data,
-              p_expected_version: revision,
+              p_expected_version: currentRevision,
             })
             .then(({ data: rpcData, error: syncErr }) => {
               if (syncErr) {
@@ -292,10 +316,12 @@ export function EventPlanProvider({
 
       return { success: true, plan: validation.data };
     },
-    [plan.version, revision, eventId]
+    [eventId]
   );
 
   const resetPlan = useCallback(() => {
+    planRef.current = initialPlan;
+    revisionRef.current = 1;
     setPlan(initialPlan);
     setRevision(1);
     setError(null);
