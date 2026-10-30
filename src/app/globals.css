@@ -80,3 +80,20 @@ body {
     border-color: hsl(var(--border));
   }
 }
+
+@media print {
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  @page {
+    margin: 1.2cm;
+    size: auto;
+  }
+
+  tr, .print-break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+}

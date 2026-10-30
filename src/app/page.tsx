@@ -8,20 +8,22 @@ import { BudgetTracker } from '@/components/dashboard/BudgetTracker';
 import { TimelineTracker } from '@/components/dashboard/TimelineTracker';
 import { VendorTracker } from '@/components/dashboard/VendorTracker';
 import { ChatSidebar } from '@/components/dashboard/ChatSidebar';
+import { PlanExportModal } from '@/components/dashboard/PlanExportModal';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Sparkles, DollarSign, Calendar, Users, MessageSquare, AlertCircle, X, RotateCcw, LogIn, LogOut } from 'lucide-react';
+import { Sparkles, DollarSign, Calendar, Users, MessageSquare, AlertCircle, X, RotateCcw, LogIn, LogOut, Download } from 'lucide-react';
 import { MOCK_CHAT_HISTORY } from '@/lib/mock-data';
 
 function DashboardContent() {
   const { plan, userEmail, signOut, error, clearError, resetPlan } = useEventPlan();
   const [activeTab, setActiveTab] = useState<'budget' | 'timeline' | 'vendors'>('budget');
   const [mobileChatOpen, setMobileChatOpen] = useState(false);
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background text-foreground antialiased flex flex-col">
+    <div className="min-h-screen bg-background text-foreground antialiased flex flex-col print:min-h-0 print:block print:bg-white print:text-black">
       {/* Top Application Navbar */}
-      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm">
+      <header className="sticky top-0 z-40 border-b border-border bg-card/95 backdrop-blur-sm print:hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center font-bold text-sm shadow-sm">
@@ -57,6 +59,24 @@ function DashboardContent() {
             >
               <RotateCcw className="w-3 h-3" />
               <span className="hidden md:inline">Reset</span>
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsExportModalOpen(true)}
+              className="text-xs h-7 px-2.5 font-medium cursor-pointer inline-flex items-center gap-1.5"
+              title="Export or print event plan"
+              aria-label="Export Plan"
+              onKeyDown={(e) => {
+                if (e.key === ' ' || e.key === 'Enter') {
+                  e.preventDefault();
+                  setIsExportModalOpen(true);
+                }
+              }}
+            >
+              <Download className="w-3.5 h-3.5" aria-hidden="true" />
+              <span className="hidden sm:inline">Export Plan</span>
             </Button>
 
             {userEmail ? (
@@ -105,7 +125,7 @@ function DashboardContent() {
 
       {/* Global Invariant Error Banner */}
       {error && (
-        <div role="alert" className="bg-destructive/10 border-b border-destructive/20 text-destructive text-xs py-2 px-4 flex items-center justify-between max-w-7xl mx-auto w-full">
+        <div role="alert" className="bg-destructive/10 border-b border-destructive/20 text-destructive text-xs py-2 px-4 flex items-center justify-between max-w-7xl mx-auto w-full print:hidden">
           <div className="flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />
             <span>{error}</span>
@@ -122,7 +142,7 @@ function DashboardContent() {
       )}
 
       {/* Main Container */}
-      <div className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+      <div className={`flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 space-y-6 ${isExportModalOpen ? 'print:hidden' : ''}`}>
         {/* Hero Event Overview Header */}
         <EventHeader />
 
@@ -185,8 +205,14 @@ function DashboardContent() {
         </div>
       </div>
 
+      {/* Plan Export & Printable View Modal */}
+      <PlanExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+      />
+
       {/* Footer */}
-      <footer className="border-t border-border mt-auto py-4 text-center text-xs text-muted-foreground">
+      <footer className="border-t border-border mt-auto py-4 text-center text-xs text-muted-foreground print:hidden">
         <p>
           Celebration Copilot • Deterministic Reactive State Engine • One Canonical EventPlan
         </p>
