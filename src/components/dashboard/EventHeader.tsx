@@ -194,6 +194,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
                   </label>
                   <Input
                     id="edit-event-date"
+                    aria-label="Event Date"
                     type="date"
                     value={editDate}
                     onChange={(e) => setEditDate(e.target.value)}
@@ -206,6 +207,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
                   </label>
                   <Input
                     id="edit-guests"
+                    aria-label="Guest Count"
                     type="number"
                     min="0"
                     max="100000"
@@ -220,6 +222,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
                   </label>
                   <Input
                     id="edit-cap"
+                    aria-label={`Target Budget (${activePlan.currency})`}
                     type="number"
                     min="0"
                     value={editCap}
@@ -233,6 +236,7 @@ export function EventHeader({ plan: propPlan }: EventHeaderProps) {
                   </label>
                   <Input
                     id="edit-location"
+                    aria-label="Location / Venue"
                     type="text"
                     value={editLocation}
                     onChange={(e) => setEditLocation(e.target.value)}

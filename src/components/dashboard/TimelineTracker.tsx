@@ -5,7 +5,7 @@ import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Milestone, MilestoneCategory } from '@/domain/event-plan.schema';
+import { Milestone, MilestoneCategory, MilestoneCategorySchema } from '@/domain/event-plan.schema';
 import { MockMilestone } from '@/lib/mock-data';
 import { useEventPlan } from '@/context/EventPlanContext';
 import { CheckCircle2, Clock, CalendarClock, Plus, Trash2, AlertCircle } from 'lucide-react';
@@ -14,6 +14,17 @@ interface TimelineTrackerProps {
   milestones?: (Milestone | MockMilestone)[];
   eventDate?: string | null;
 }
+
+const MILESTONE_CATEGORIES: { value: MilestoneCategory; label: string }[] = [
+  { value: 'planning', label: 'Planning' },
+  { value: 'venue', label: 'Venue' },
+  { value: 'catering', label: 'Catering' },
+  { value: 'media', label: 'Media' },
+  { value: 'attire', label: 'Attire' },
+  { value: 'entertainment', label: 'Entertainment' },
+  { value: 'execution', label: 'Execution' },
+  { value: 'post_event', label: 'Post Event' },
+];
 
 export function TimelineTracker({
   milestones: propMilestones,
@@ -42,6 +53,13 @@ export function TimelineTracker({
   const progressPercent = contextMetrics
     ? contextMetrics.timelineProgressPercent
     : milestones.length > 0 ? Math.round((completedCount / milestones.length) * 100) : 0;
+
+  // Category Filter State
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+
+  const filteredMilestones = categoryFilter === 'all'
+    ? milestones
+    : milestones.filter((m) => m.category === categoryFilter);
 
   // Add Milestone State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -114,10 +132,27 @@ export function TimelineTracker({
               All target deadlines are automatically computed from the celebration date ({eventDate || 'Date TBD'}).
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
             <Badge variant="outline" className="font-mono text-xs">
               {completedCount}/{milestones.length} Completed ({progressPercent}%)
             </Badge>
+            <label htmlFor="timeline-category-filter" className="sr-only">
+              Filter milestones by category
+            </label>
+            <select
+              id="timeline-category-filter"
+              aria-label="Filter milestones by category"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-8 text-xs bg-background border border-border rounded-md px-2 text-foreground cursor-pointer font-medium"
+            >
+              <option value="all">All Categories</option>
+              {MILESTONE_CATEGORIES.map((cat) => (
+                <option key={cat.value} value={cat.value}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
             {dispatchMutation && (
               <Button
                 size="sm"
@@ -135,12 +170,13 @@ export function TimelineTracker({
         {showAddForm && (
           <form onSubmit={handleCreateMilestone} className="mt-4 p-3 bg-muted/30 rounded-lg border border-border space-y-3">
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
-              <div className="sm:col-span-2">
+              <div>
                 <label htmlFor="new-milestone-title" className="font-semibold block mb-1">
                   Milestone Title *
                 </label>
                 <Input
                   id="new-milestone-title"
+                  aria-label="Milestone Title"
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="e.g. Confirm Catering Menu"
@@ -153,6 +189,7 @@ export function TimelineTracker({
                 </label>
                 <Input
                   id="new-milestone-offset"
+                  aria-label="Offset Days"
                   type="number"
                   min="-3650"
                   max="3650"
@@ -161,6 +198,29 @@ export function TimelineTracker({
                   placeholder="-30"
                   className="h-8 text-xs bg-background"
                 />
+              </div>
+              <div>
+                <label htmlFor="new-milestone-category" className="font-semibold block mb-1">
+                  Category
+                </label>
+                <select
+                  id="new-milestone-category"
+                  aria-label="Category"
+                  value={newCategory}
+                  onChange={(e) => {
+                    const parsed = MilestoneCategorySchema.safeParse(e.target.value);
+                    if (parsed.success) {
+                      setNewCategory(parsed.data);
+                    }
+                  }}
+                  className="h-8 text-xs bg-background border border-border rounded-md px-2 w-full text-foreground cursor-pointer font-medium"
+                >
+                  {MILESTONE_CATEGORIES.map((cat) => (
+                    <option key={cat.value} value={cat.value}>
+                      {cat.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -190,10 +250,14 @@ export function TimelineTracker({
       </CardHeader>
       <CardContent className="p-4 sm:p-5">
         <div className="space-y-3">
-          {milestones.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">No milestones scheduled yet.</p>
+          {filteredMilestones.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">
+              {categoryFilter === 'all'
+                ? 'No milestones scheduled yet.'
+                : 'No milestones found in this category.'}
+            </p>
           ) : (
-            milestones.map((ms) => {
+            filteredMilestones.map((ms) => {
               const isEventDay = ms.offsetDays === 0;
               const offsetLabel = isEventDay ? 'Event Day' : `${ms.offsetDays}d`;
 
@@ -245,8 +309,9 @@ export function TimelineTracker({
                             ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
                             : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
                         }`}
-                        title="Toggle completion status"
-                        aria-label={`Mark milestone "${ms.title}" as ${ms.completed ? 'upcoming' : 'completed'}`}
+                        title={ms.completed ? 'Mark as incomplete' : 'Mark as complete'}
+                        aria-pressed={ms.completed}
+                        aria-label={`Mark "${ms.title}" as completed`}
                       >
                         {ms.completed ? (
                           <>
@@ -273,7 +338,7 @@ export function TimelineTracker({
                         onClick={() => handleDeleteMilestone(ms.id)}
                         className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive cursor-pointer"
                         title="Delete milestone"
-                        aria-label={`Delete milestone ${ms.title}`}
+                        aria-label={`Delete milestone "${ms.title}"`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </Button>

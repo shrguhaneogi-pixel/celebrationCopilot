@@ -311,6 +311,7 @@ export function BudgetTracker({
                   </label>
                   <Input
                     id="new-item-name"
+                    aria-label="Item Name"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
                     placeholder="e.g. Wedding Cake"
@@ -323,6 +324,7 @@ export function BudgetTracker({
                   </label>
                   <Input
                     id="new-item-category"
+                    aria-label="Category"
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
                     placeholder="e.g. Catering"
@@ -335,6 +337,7 @@ export function BudgetTracker({
                   </label>
                   <Input
                     id="new-item-est"
+                    aria-label={`Estimated Cost (${currency})`}
                     type="number"
                     min="0"
                     value={newEstCost}
@@ -349,6 +352,7 @@ export function BudgetTracker({
                   </label>
                   <Input
                     id="new-item-actual"
+                    aria-label="Actual / Quoted Cost"
                     type="number"
                     min="0"
                     value={newActualCost}

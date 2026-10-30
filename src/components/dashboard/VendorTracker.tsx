@@ -33,6 +33,8 @@ const PRIORITY_OPTIONS: { value: VendorPriority; label: string }[] = [
   { value: 'low', label: 'Low' },
 ];
 
+const EMPTY_VENDORS: (VendorTask | MockVendorItem)[] = [];
+
 export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
   let contextPlan: ReturnType<typeof useEventPlan>['plan'] | undefined;
   let dispatchMutation: ReturnType<typeof useEventPlan>['dispatchMutation'] | undefined;
@@ -45,9 +47,36 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
     // Fallback if rendered outside context
   }
 
-  const vendors = contextPlan ? contextPlan.vendors : (propVendors || []);
+  const vendors = React.useMemo(() => {
+    return contextPlan ? contextPlan.vendors : (propVendors || EMPTY_VENDORS);
+  }, [contextPlan, propVendors]);
 
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
+
+  // Category and Search Filter State
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState<string>('');
+
+  const availableCategories = React.useMemo(() => {
+    const cats = new Set<string>();
+    vendors.forEach((v) => {
+      if (v.category) cats.add(v.category);
+    });
+    return Array.from(cats).sort();
+  }, [vendors]);
+
+  const filteredVendors = React.useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    return vendors.filter((v) => {
+      const matchesCategory =
+        categoryFilter === 'all' || v.category.toLowerCase() === categoryFilter.toLowerCase();
+      const matchesSearch =
+        !query ||
+        v.name.toLowerCase().includes(query) ||
+        v.category.toLowerCase().includes(query);
+      return matchesCategory && matchesSearch;
+    });
+  }, [vendors, categoryFilter, searchQuery]);
 
   // Add Vendor State
   const [showAddForm, setShowAddForm] = useState(false);
@@ -166,10 +195,39 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
               Categorized vendor commitments with curated interview cheat sheets.
             </CardDescription>
           </div>
-          <div className="flex items-center gap-2 self-start sm:self-auto">
-            <span className="text-xs text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md border border-border">
+          <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+            <span className="text-xs text-muted-foreground bg-muted/60 px-2.5 py-1 rounded-md border border-border hidden sm:inline-block">
               Simulated Suggestions
             </span>
+            <label htmlFor="vendor-search-input" className="sr-only">
+              Search vendors
+            </label>
+            <Input
+              id="vendor-search-input"
+              aria-label="Search vendors"
+              type="search"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search vendors..."
+              className="h-8 text-xs bg-background w-28 sm:w-36"
+            />
+            <label htmlFor="vendor-category-filter" className="sr-only">
+              Filter vendors by category
+            </label>
+            <select
+              id="vendor-category-filter"
+              aria-label="Filter vendors by category"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+              className="h-8 text-xs bg-background border border-border rounded-md px-2 text-foreground cursor-pointer font-medium"
+            >
+              <option value="all">All Categories</option>
+              {availableCategories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
             {dispatchMutation && (
               <Button
                 size="sm"
@@ -193,6 +251,7 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                 </label>
                 <Input
                   id="new-vendor-name"
+                  aria-label="Vendor Name"
                   value={newName}
                   onChange={(e) => setNewName(e.target.value)}
                   placeholder="e.g. Royal Florists"
@@ -205,6 +264,7 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                 </label>
                 <Input
                   id="new-vendor-category"
+                  aria-label="Category"
                   value={newCategory}
                   onChange={(e) => setNewCategory(e.target.value)}
                   placeholder="e.g. Floral & Decor"
@@ -217,6 +277,7 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                 </label>
                 <select
                   id="new-vendor-priority"
+                  aria-label="Priority"
                   value={newPriority}
                   onChange={(e) => {
                     const parsed = VendorPrioritySchema.safeParse(e.target.value);
@@ -224,7 +285,7 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                       setNewPriority(parsed.data);
                     }
                   }}
-                  className="h-8 text-xs bg-background border border-border rounded-md px-2 w-full text-foreground"
+                  className="h-8 text-xs bg-background border border-border rounded-md px-2 w-full text-foreground cursor-pointer font-medium"
                 >
                   <option value="high">High Priority</option>
                   <option value="medium">Medium Priority</option>
@@ -239,6 +300,7 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
               </label>
               <textarea
                 id="new-vendor-questions"
+                aria-label="Suggested Questions"
                 rows={2}
                 value={newQuestions}
                 onChange={(e) => setNewQuestions(e.target.value)}
@@ -273,10 +335,14 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
       </CardHeader>
       <CardContent className="p-4 sm:p-5">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {vendors.length === 0 ? (
-            <p className="text-xs text-muted-foreground col-span-2 text-center py-4">No vendor tasks listed yet.</p>
+          {filteredVendors.length === 0 ? (
+            <p className="text-xs text-muted-foreground col-span-2 text-center py-4">
+              {vendors.length === 0
+                ? 'No vendor tasks listed yet.'
+                : 'No vendors match your search or filter criteria.'}
+            </p>
           ) : (
-            vendors.map((vendor) => (
+            filteredVendors.map((vendor) => (
               <div
                 key={vendor.id}
                 className="rounded-lg border border-border bg-card p-4 space-y-3 shadow-xs hover:border-primary/40 transition-colors"
@@ -289,7 +355,11 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                   <div className="flex items-center gap-1.5 flex-wrap justify-end">
                     {dispatchMutation ? (
                       <>
+                        <label htmlFor={`vendor-priority-${vendor.id}`} className="sr-only">
+                          Change priority for {vendor.name}
+                        </label>
                         <select
+                          id={`vendor-priority-${vendor.id}`}
                           value={vendor.priority}
                           onChange={(e) => {
                             const parsed = VendorPrioritySchema.safeParse(e.target.value);
@@ -308,7 +378,11 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                           ))}
                         </select>
 
+                        <label htmlFor={`vendor-status-${vendor.id}`} className="sr-only">
+                          Change booking status for {vendor.name}
+                        </label>
                         <select
+                          id={`vendor-status-${vendor.id}`}
                           value={vendor.status}
                           onChange={(e) => {
                             const parsed = VendorStatusSchema.safeParse(e.target.value);
@@ -370,7 +444,7 @@ export function VendorTracker({ vendors: propVendors }: VendorTrackerProps) {
                               className="h-6 w-6 p-0 shrink-0 text-muted-foreground hover:text-foreground cursor-pointer"
                               onClick={() => handleCopyQuestion(q, copyKey)}
                               title="Copy question to clipboard"
-                              aria-label="Copy question to clipboard"
+                              aria-label={`Copy question: "${q}"`}
                             >
                               {isCopied ? (
                                 <Check className="w-3 h-3 text-emerald-600" />

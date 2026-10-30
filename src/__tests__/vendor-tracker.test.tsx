@@ -120,6 +120,56 @@ describe('VendorTracker Safe Select & EventHeader Null Guarding (TS-001)', () =>
     }
   });
 
+  it('renders accessible name on VendorTracker category filter select and filters vendors', () => {
+    const multiVendorPlan: EventPlan = {
+      ...mockPlan,
+      vendors: [
+        {
+          id: 'ven-1',
+          name: 'Premier Sound & Lights',
+          category: 'AV Production',
+          priority: 'high',
+          status: 'contacted',
+          suggestedQuestions: ['What are the load-in requirements?'],
+        },
+        {
+          id: 'ven-2',
+          name: 'Grand Gourmet Catering',
+          category: 'Catering',
+          priority: 'medium',
+          status: 'quoted',
+          suggestedQuestions: ['Is live counter staff included?'],
+        },
+      ],
+    };
+
+    render(
+      <EventPlanProvider initialPlan={multiVendorPlan} persistToLocalStorage={false}>
+        <VendorTracker />
+      </EventPlanProvider>
+    );
+
+    const filterSelect = screen.getByRole('combobox', {
+      name: /Filter vendors by category/i,
+    });
+    expect(filterSelect).toBeDefined();
+    expect(filterSelect.getAttribute('aria-label')).toBe('Filter vendors by category');
+
+    // Both vendors initially visible
+    expect(screen.getByText('Premier Sound & Lights')).toBeDefined();
+    expect(screen.getByText('Grand Gourmet Catering')).toBeDefined();
+
+    // Filter to 'Catering'
+    fireEvent.change(filterSelect, { target: { value: 'Catering' } });
+    expect(screen.getByText('Grand Gourmet Catering')).toBeDefined();
+    expect(screen.queryByText('Premier Sound & Lights')).toBeNull();
+
+    // Reset to 'all'
+    fireEvent.change(filterSelect, { target: { value: 'all' } });
+    expect(screen.getByText('Premier Sound & Lights')).toBeDefined();
+    expect(screen.getByText('Grand Gourmet Catering')).toBeDefined();
+  });
+
   it('renders EventHeader safely outside context without dispatchMutation and does not throw', () => {
     // When rendered outside EventPlanProvider (dispatchMutation is undefined)
     render(<EventHeader plan={mockPlan} />);
@@ -147,5 +197,106 @@ describe('VendorTracker Safe Select & EventHeader Null Guarding (TS-001)', () =>
     fireEvent.click(saveBtn);
 
     expect(screen.getByText('Grand Ballroom')).toBeDefined();
+  });
+
+  it('renders accessible name on VendorTracker search input and filters vendors by keyword', () => {
+    const multiVendorPlan: EventPlan = {
+      ...mockPlan,
+      vendors: [
+        {
+          id: 'ven-1',
+          name: 'Premier Sound & Lights',
+          category: 'AV Production',
+          priority: 'high',
+          status: 'contacted',
+          suggestedQuestions: ['What are the load-in requirements?'],
+        },
+        {
+          id: 'ven-2',
+          name: 'Grand Gourmet Catering',
+          category: 'Catering',
+          priority: 'medium',
+          status: 'quoted',
+          suggestedQuestions: ['Is live counter staff included?'],
+        },
+      ],
+    };
+
+    render(
+      <EventPlanProvider initialPlan={multiVendorPlan} persistToLocalStorage={false}>
+        <VendorTracker />
+      </EventPlanProvider>
+    );
+
+    // Verify search input has accessible name and label
+    const searchInput = screen.getByRole('searchbox', { name: /Search vendors/i });
+    expect(searchInput).toBeDefined();
+    expect(searchInput.getAttribute('aria-label')).toBe('Search vendors');
+    expect(screen.getByLabelText(/Search vendors/i)).toBe(searchInput);
+
+    // Search by vendor name
+    fireEvent.change(searchInput, { target: { value: 'Gourmet' } });
+    expect(screen.getByText('Grand Gourmet Catering')).toBeDefined();
+    expect(screen.queryByText('Premier Sound & Lights')).toBeNull();
+
+    // Search by keyword in category
+    fireEvent.change(searchInput, { target: { value: 'Production' } });
+    expect(screen.getByText('Premier Sound & Lights')).toBeDefined();
+    expect(screen.queryByText('Grand Gourmet Catering')).toBeNull();
+
+    // Search with no matches shows empty state
+    fireEvent.change(searchInput, { target: { value: 'Nonexistent Vendor Query' } });
+    expect(screen.getByText('No vendors match your search or filter criteria.')).toBeDefined();
+
+    // Clear search
+    fireEvent.change(searchInput, { target: { value: '' } });
+    expect(screen.getByText('Premier Sound & Lights')).toBeDefined();
+    expect(screen.getByText('Grand Gourmet Catering')).toBeDefined();
+  });
+
+  it('verifies all select and input elements in VendorTracker have accessible names and explicit labels', () => {
+    const { container } = render(
+      <EventPlanProvider initialPlan={mockPlan} persistToLocalStorage={false}>
+        <VendorTracker />
+      </EventPlanProvider>
+    );
+
+    // Open add vendor form
+    fireEvent.click(screen.getByRole('button', { name: /Add Vendor/i }));
+
+    const selects = container.querySelectorAll('select');
+    expect(selects.length).toBeGreaterThanOrEqual(3); // filter select, new vendor priority, vendor card priority + status
+
+    selects.forEach((select) => {
+      const ariaLabel = select.getAttribute('aria-label');
+      const id = select.getAttribute('id');
+      expect(ariaLabel).toBeTruthy();
+      expect(id).toBeTruthy();
+
+      // Check explicit label association
+      if (id) {
+        const matchingLabel = container.querySelector(`label[for="${id}"]`);
+        expect(matchingLabel).not.toBeNull();
+      }
+    });
+
+    // Verify search input
+    const searchInput = screen.getByRole('searchbox', { name: /Search vendors/i });
+    expect(searchInput).toBeDefined();
+
+    // Verify label associations for add vendor form controls
+    expect(screen.getByLabelText(/Vendor Name \*/i)).toBeDefined();
+    expect(screen.getByLabelText(/Category \*/i)).toBeDefined();
+    expect(screen.getByLabelText(/^Priority$/i)).toBeDefined();
+    expect(screen.getByLabelText(/Suggested Questions/i)).toBeDefined();
+
+    // Verify category filter select has associated label
+    expect(screen.getByLabelText(/Filter vendors by category/i)).toBeDefined();
+
+    // Verify copy button has descriptive accessible label
+    const copyBtn = screen.getByRole('button', {
+      name: 'Copy question: "What are the load-in requirements?"',
+    });
+    expect(copyBtn).toBeDefined();
   });
 });
