@@ -49,7 +49,7 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
     vi.restoreAllMocks();
   });
 
-  it('rejects unauthenticated requests with HTTP 401 Unauthorized', async () => {
+  it('allows unauthenticated requests to proceed in Guest Mode without throwing 401 Unauthorized', async () => {
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://mock.supabase.co');
     vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'mock-anon-key');
 
@@ -67,16 +67,45 @@ describe('POST /api/planner - Supabase SSR Auth, RLS, & Atomic Concurrency', () 
       method: 'POST',
       body: JSON.stringify({
         message: 'Increase guests to 250',
-        eventId: mockEventId,
+        currentPlan: authoritativeDbPlan,
       }),
       headers: { 'Content-Type': 'application/json' },
     });
 
     const res = await POST(req);
-    expect(res.status).toBe(401);
+    expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.success).toBe(false);
-    expect(data.error).toContain('Unauthorized');
+    expect(data.success).toBe(true);
+    expect(data.plan.guestCount).toBe(250);
+  });
+
+  it('allows unauthenticated requests in Guest Mode without currentPlan by falling back to default plan', async () => {
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_URL', 'https://mock.supabase.co');
+    vi.stubEnv('NEXT_PUBLIC_SUPABASE_ANON_KEY', 'mock-anon-key');
+
+    // Mock server supabase returning unauthenticated user
+    vi.spyOn(supabaseServer, 'createClient').mockResolvedValueOnce({
+      auth: {
+        getUser: vi.fn().mockResolvedValueOnce({
+          data: { user: null },
+          error: null,
+        }),
+      },
+    } as unknown as Awaited<ReturnType<typeof supabaseServer.createClient>>);
+
+    const req = new NextRequest('http://localhost:3000/api/planner', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: 'Increase guests to 500',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.plan.guestCount).toBe(500);
   });
 
   it('loads authoritative plan from database and ignores client-supplied plan without committing before approval', async () => {

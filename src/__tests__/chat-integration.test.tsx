@@ -212,4 +212,22 @@ describe('ChatSidebar Integration & Workflow', () => {
     });
     expect(callCount).toBe(2);
   });
+
+  it('persists chat messages to localStorage and rehydrates on remount', () => {
+    const { unmount } = renderWithContext();
+    const textarea = screen.getByRole('textbox', { name: /Planning Copilot chat input/i });
+    fireEvent.change(textarea, { target: { value: 'Persisted test message' } });
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+
+    // Verify localStorage has the message
+    const stored = localStorage.getItem('celebration_copilot_chat_history');
+    expect(stored).not.toBeNull();
+    expect(stored).toContain('Persisted test message');
+
+    unmount();
+
+    // Re-mount and check if persisted message is restored
+    renderWithContext();
+    expect(screen.getByText('Persisted test message')).toBeDefined();
+  });
 });

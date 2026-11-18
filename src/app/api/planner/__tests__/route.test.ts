@@ -94,6 +94,23 @@ describe('POST /api/planner Route Handler', () => {
     expect(res.headers.get('Cache-Control')).toContain('private, no-cache');
   });
 
+  it('generates proposal and defaults to initial event plan when currentPlan is omitted in guest mode', async () => {
+    const req = new NextRequest('http://localhost:3000/api/planner', {
+      method: 'POST',
+      body: JSON.stringify({
+        message: 'Increase guests to 500',
+      }),
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    const res = await POST(req);
+    expect(res.status).toBe(200);
+    const data = await res.json();
+    expect(data.success).toBe(true);
+    expect(data.plan.guestCount).toBe(500);
+    expect(data.plan.version).toBe(2);
+  });
+
   it('returns 422 when AI proposes an operation that violates domain invariants', async () => {
     // Mock the provider to emit a proposal targeting a non-existent item
     vi.spyOn(provider, 'generatePlannerProposal').mockResolvedValueOnce({

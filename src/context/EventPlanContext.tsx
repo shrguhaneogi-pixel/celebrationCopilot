@@ -5,25 +5,8 @@ import { EventPlan, EventPlanSchema, DerivedEventMetrics } from '@/domain/event-
 import { PlanMutation } from '@/domain/proposal.schema';
 import { applyMutation, calculateTotals, recalculateMilestoneDates, DomainEngineError } from '@/domain/planning-engine';
 import { createClient } from '@/lib/supabase/client';
-import { MOCK_EVENT_PLAN } from '@/lib/mock-data';
-
-export const INITIAL_EVENT_PLAN: EventPlan = {
-  id: MOCK_EVENT_PLAN.id,
-  version: 1,
-  title: MOCK_EVENT_PLAN.title,
-  eventType: MOCK_EVENT_PLAN.eventType,
-  eventDate: MOCK_EVENT_PLAN.eventDate,
-  timezone: 'Asia/Kolkata',
-  location: MOCK_EVENT_PLAN.location,
-  guestCount: MOCK_EVENT_PLAN.guestCount,
-  currency: MOCK_EVENT_PLAN.currency,
-  totalCap: MOCK_EVENT_PLAN.totalCap,
-  items: MOCK_EVENT_PLAN.items,
-  milestones: MOCK_EVENT_PLAN.milestones,
-  vendors: MOCK_EVENT_PLAN.vendors,
-  createdAt: '2026-10-29T10:00:00.000Z',
-  updatedAt: '2026-10-29T10:00:00.000Z',
-};
+import { INITIAL_EVENT_PLAN } from '@/lib/mock-data';
+export { INITIAL_EVENT_PLAN } from '@/lib/mock-data';
 
 export interface MutationResult {
   success: boolean;
@@ -328,6 +311,8 @@ export function EventPlanProvider({
     if (typeof window !== 'undefined' && persistToLocalStorage) {
       try {
         localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('celebration_copilot_chat_history');
+        window.dispatchEvent(new Event('celebration_copilot_reset'));
       } catch {
         // Ignore
       }

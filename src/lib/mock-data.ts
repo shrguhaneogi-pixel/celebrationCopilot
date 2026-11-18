@@ -190,6 +190,8 @@ export const MOCK_EVENT_PLAN: MockEventPlan = {
   updatedAt: '2026-10-29T10:00:00.000Z',
 };
 
+export const INITIAL_EVENT_PLAN: MockEventPlan = MOCK_EVENT_PLAN;
+
 export const MOCK_CHAT_HISTORY: MockChatMessage[] = [
   {
     id: 'msg-1',

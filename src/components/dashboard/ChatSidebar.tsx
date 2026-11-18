@@ -17,6 +17,8 @@ interface ChatSidebarProps {
   onApplyPlan?: (newPlan: EventPlan) => void;
 }
 
+const CHAT_STORAGE_KEY = 'celebration_copilot_chat_history';
+
 export function ChatSidebar({
   initialMessages = [],
   currency: propCurrency,
@@ -43,7 +45,22 @@ export function ChatSidebar({
   const activePlan = contextPlan || propPlan;
   const currency = activePlan ? activePlan.currency : (propCurrency || 'INR');
 
-  const [messages, setMessages] = useState<MockChatMessage[]>(initialMessages);
+  const [messages, setMessages] = useState<MockChatMessage[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(CHAT_STORAGE_KEY);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch {
+        // Fallback to initialMessages if localStorage is unreadable
+      }
+    }
+    return initialMessages;
+  });
   const [inputVal, setInputVal] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [stagedPlan, setStagedPlan] = useState<EventPlan | null>(null);
@@ -55,6 +72,32 @@ export function ChatSidebar({
   const [liveAnnouncement, setLiveAnnouncement] = useState('');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Sync messages to LocalStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages));
+      } catch {
+        // Handle storage quota issues gracefully
+      }
+    }
+  }, [messages]);
+
+  // Listen to plan resets to synchronize chat history
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleReset = () => {
+      setMessages(initialMessages);
+      try {
+        localStorage.removeItem(CHAT_STORAGE_KEY);
+      } catch {
+        // Ignore
+      }
+    };
+    window.addEventListener('celebration_copilot_reset', handleReset);
+    return () => window.removeEventListener('celebration_copilot_reset', handleReset);
+  }, [initialMessages]);
 
   // Auto-scroll to latest message
   useEffect(() => {
